@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python virtual environment
+venv/
+env/
+ENV/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Testing
+coverage/
+.coverage
+.pytest_cache/
+
+# Misc
+.cache/
+temp/
+tmp/

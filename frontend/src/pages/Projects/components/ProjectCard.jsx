@@ -3,7 +3,7 @@ import Card from '@components/Card';
 import Badge from '@components/Badge';
 import Button from '@components/Button';
 import ProgressBar from '@components/ProgressBar';
-import { Clock, Code, TrendingUp } from 'lucide-react';
+import { Clock, Code } from 'lucide-react';
 
 const ProjectCard = ({ project }) => {
   return (

@@ -30,21 +30,24 @@ class LLMService:
     
     def __init__(self):
         self.google_api_key = settings.GOOGLE_API_KEY
+        self.llm = None
         
         # Configure Gemini
         if self.google_api_key:
             genai.configure(api_key=self.google_api_key)
-        
-        # Initialize LangChain LLM with Gemini 2.5 Flash (Free tier)
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.GEMINI_MODEL,  # gemini-2.0-flash-exp
-            google_api_key=self.google_api_key,
-            temperature=settings.GEMINI_TEMPERATURE,
-            max_output_tokens=settings.GEMINI_MAX_TOKENS,
-            convert_system_message_to_human=True,
-        )
-        
-        print(f"✅ LLM initialized: {settings.GEMINI_MODEL}")
+            
+            # Initialize LangChain LLM with Gemini 2.5 Flash (Free tier)
+            self.llm = ChatGoogleGenerativeAI(
+                model=settings.GEMINI_MODEL,  # gemini-2.0-flash-exp
+                google_api_key=self.google_api_key,
+                temperature=settings.GEMINI_TEMPERATURE,
+                max_output_tokens=settings.GEMINI_MAX_TOKENS,
+                convert_system_message_to_human=True,
+            )
+            
+            print(f"✅ LLM initialized: {settings.GEMINI_MODEL}")
+        else:
+            print("⚠️  GOOGLE_API_KEY not set – LLM features disabled. Add it to .env to enable AI.")
     
     async def generate_onboarding_response(
         self,

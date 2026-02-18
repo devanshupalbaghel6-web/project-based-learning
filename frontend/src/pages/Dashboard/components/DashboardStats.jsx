@@ -1,6 +1,5 @@
 import React from 'react';
 import Card from '@components/Card';
-import ProgressBar from '@components/ProgressBar';
 import { Calendar, TrendingUp, Target, Award } from 'lucide-react';
 
 const StatCard = ({ icon: Icon, title, value, change, color }) => (

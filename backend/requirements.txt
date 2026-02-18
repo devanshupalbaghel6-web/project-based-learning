@@ -2,6 +2,7 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
+email-validator>=2.0.0
 pymongo==4.6.1
 motor==3.3.2
 python-multipart==0.0.6
@@ -27,7 +28,7 @@ langchain-community==0.0.16
 
 # Local Embeddings (optimized, lightweight model)
 sentence-transformers==2.3.1
-torch==2.1.2
+torch>=2.2.0
 
 # Vector DB - Qdrant (more efficient than ChromaDB)
 qdrant-client==1.7.0

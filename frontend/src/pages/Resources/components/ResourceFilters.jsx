@@ -1,6 +1,5 @@
 import React from 'react';
 import { Search } from 'lucide-react';
-import Input from '@components/Input';
 
 const ResourceFilters = () => {
   const platforms = [

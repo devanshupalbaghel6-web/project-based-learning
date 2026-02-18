@@ -1,5 +1,4 @@
 import React from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs';
 
 const ProjectTabs = ({ children }) => {
   return (

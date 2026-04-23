@@ -51,7 +51,7 @@ class UserRepository:
             {"_id": ObjectId(user_id)},
             {"$set": update_data}
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def update_profile(self, user_id: str, profile_data: Dict) -> bool:
         """Update user profile (from onboarding)"""
@@ -62,7 +62,7 @@ class UserRepository:
             {"_id": ObjectId(user_id)},
             {"$set": profile_data}
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def delete(self, user_id: str) -> bool:
         """Delete user"""

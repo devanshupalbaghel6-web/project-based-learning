@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str = ""  # API key for Qdrant cloud
     QDRANT_HOST: str = "localhost"  # Fallback for local development
     QDRANT_PORT: int = 6333
+    QDRANT_LOCAL_PATH: str = ".qdrant_data"  # Local persisted embedded storage
     QDRANT_COLLECTION: str = "learning_resources"
     QDRANT_USE_MEMORY: bool = True  # In-memory mode for development
     QDRANT_USE_CLOUD: bool = False  # Set to True to use cloud instance

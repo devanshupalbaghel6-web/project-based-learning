@@ -9,10 +9,10 @@ export const usersService = {
    * Register a new user
    */
   register: async (email, password, fullName) => {
-    const response = await apiClient.post('/users/register', {
+    const response = await apiClient.post('/auth/register', {
       email,
       password,
-      full_name: fullName,
+      name: fullName,
     });
     return response.data;
   },
@@ -21,7 +21,7 @@ export const usersService = {
    * Get current user profile
    */
   getCurrentUser: async () => {
-    const response = await apiClient.get('/users/me');
+    const response = await apiClient.get('/auth/me');
     return response.data;
   },
 
@@ -29,7 +29,7 @@ export const usersService = {
    * Update user profile
    */
   updateProfile: async (updates) => {
-    const response = await apiClient.put('/users/me', updates);
+    const response = await apiClient.put('/auth/me', updates);
     return response.data;
   },
 
@@ -37,7 +37,7 @@ export const usersService = {
    * Get user statistics
    */
   getUserStats: async () => {
-    const response = await apiClient.get('/users/stats');
+    const response = await apiClient.get('/progress/stats');
     return response.data;
   },
 };

@@ -78,7 +78,7 @@ async def generate_roadmap(
     user = await repos.users.find_by_id(user_id)
     user_profile = {
         "experience_level": user.get("experience_level", "beginner"),
-        "skills": user.get("current_skills", [])
+        "skills": user.get("skills", user.get("current_skills", []))
     }
     
     # Generate roadmap using orchestrator
@@ -190,7 +190,7 @@ async def get_progress(
     stats = await repos.progress.get_stats_by_roadmap(roadmap_id)
     
     return {
-        **progress,
+        **progress.model_dump(),
         "progress_entries": progress_entries,
         "current_streak": streak,
         "stats": stats
@@ -270,7 +270,7 @@ async def complete_checkpoint(
         "roadmap_id": str(milestone["roadmap_id"]),
         "milestone_id": str(checkpoint["milestone_id"]),
         "checkpoint_id": checkpoint_id,
-        "activity_type": "checkpoint_completed",
+        "action": "checkpoint_completed",
         "timestamp": datetime.utcnow()
     })
     
@@ -287,7 +287,7 @@ async def complete_checkpoint(
             "user_id": user_id,
             "roadmap_id": str(milestone["roadmap_id"]),
             "milestone_id": str(checkpoint["milestone_id"]),
-            "activity_type": "milestone_completed",
+            "action": "milestone_completed",
             "timestamp": datetime.utcnow()
         })
     

@@ -10,7 +10,11 @@ const StatCard = ({ icon: Icon, title, value, change, color }) => (
         <h3 className="text-2xl font-bold mb-1">{value}</h3>
         {change && (
           <p className={`text-sm flex items-center gap-1 ${
-            change.startsWith('+') ? 'text-success-DEFAULT' : 'text-error-DEFAULT'
+            change.startsWith('+')
+              ? 'text-success-DEFAULT'
+              : change.startsWith('-')
+                ? 'text-error-DEFAULT'
+                : 'text-secondary-600'
           }`}>
             <TrendingUp size={14} />
             {change}
@@ -24,35 +28,40 @@ const StatCard = ({ icon: Icon, title, value, change, color }) => (
   </Card>
 );
 
-const DashboardStats = () => {
+const DashboardStats = ({ stats }) => {
+  const activeProjects = stats?.total_projects ?? 0;
+  const completedMilestones = stats?.completed_milestones ?? 0;
+  const streak = stats?.longest_streak ?? 0;
+  const completionRate = Math.round((stats?.completion_rate ?? 0) * 100);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <StatCard
         icon={Target}
         title="Active Projects"
-        value="3"
-        change="+1 this week"
+        value={String(activeProjects)}
+        change={activeProjects > 0 ? 'In progress' : null}
         color="bg-primary-600"
       />
       <StatCard
         icon={Award}
-        title="Completed"
-        value="12"
-        change="+2 this month"
+        title="Milestones Done"
+        value={String(completedMilestones)}
+        change={completedMilestones > 0 ? 'Completed so far' : null}
         color="bg-success-DEFAULT"
       />
       <StatCard
         icon={Calendar}
         title="Days Streak"
-        value="15"
-        change="+5 days"
+        value={String(streak)}
+        change={streak > 0 ? 'Keep it up' : null}
         color="bg-warning-DEFAULT"
       />
       <StatCard
         icon={TrendingUp}
-        title="Avg Progress"
-        value="68%"
-        change="+12%"
+        title="Completion Rate"
+        value={`${completionRate}%`}
+        change={completionRate > 0 ? 'Across checkpoints' : null}
         color="bg-primary-600"
       />
     </div>

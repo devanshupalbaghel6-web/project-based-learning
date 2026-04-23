@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import List, Dict, Optional
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 
@@ -18,12 +18,12 @@ class OnboardingResponse(BaseModel):
 
 class OnboardingData(BaseModel):
     """Complete onboarding data"""
-    user_id: str
-    responses: List[OnboardingResponse]
     experience_level: str
     primary_goal: str
-    interests: List[str]
-    completed_at: datetime
+    interests: List[str] = Field(default_factory=list)
+    current_skills: List[str] = Field(default_factory=list)
+    time_commitment: Optional[str] = None
+    preferred_learning_style: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -33,13 +33,15 @@ class ChatMessage(BaseModel):
     """Chat message model"""
     role: str  # "user" or "assistant"
     content: str
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ChatRequest(BaseModel):
     """Chat request model"""
     message: str
-    conversation_history: Optional[List[ChatMessage]] = []
+    conversation_history: List[ChatMessage] = Field(default_factory=list)
+    user_id: Optional[str] = None
+    context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatResponse(BaseModel):
@@ -47,3 +49,4 @@ class ChatResponse(BaseModel):
     message: str
     next_question: Optional[OnboardingQuestion] = None
     is_complete: bool = False
+    extracted_info: Dict[str, Any] = Field(default_factory=dict)

@@ -28,8 +28,24 @@ export const resourcesService = {
   /**
    * Get saved resources
    */
-  getSavedResources: async () => {
-    const response = await apiClient.get('/resources/saved');
+  getSavedResources: async (platform = null, skip = 0, limit = 20) => {
+    const response = await apiClient.get('/resources/saved', {
+      params: {
+        platform,
+        skip,
+        limit,
+      },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get recent resource queries
+   */
+  getRecentQueries: async (limit = 5) => {
+    const response = await apiClient.get('/resources/recent-queries', {
+      params: { limit },
+    });
     return response.data;
   },
 

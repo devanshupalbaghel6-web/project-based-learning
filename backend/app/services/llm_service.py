@@ -15,7 +15,7 @@ Optimizations for free tier:
 - RAG with Qdrant for context retrieval
 """
 
-from typing import List, Dict, Optional
+from typing import Any, Dict, List, Optional
 from app.core.config import settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import LLMChain
@@ -52,7 +52,8 @@ class LLMService:
     async def generate_onboarding_response(
         self,
         user_message: str,
-        conversation_history: List[Dict],
+        conversation_history: Optional[List[Dict]] = None,
+        context: Optional[Dict] = None,
     ) -> Dict:
         """
         Generate AI response for onboarding conversation
@@ -64,6 +65,20 @@ class LLMService:
         Returns:
             Dictionary with response and next question
         """
+        conversation_history = conversation_history or []
+        context = context or {}
+
+        if not self.llm:
+            is_complete = len(conversation_history) >= 6
+            fallback = "Thanks, that helps. What is your current experience level and weekly time commitment?"
+            return {
+                "message": fallback,
+                "response": fallback,
+                "next_question": None if is_complete else fallback,
+                "is_complete": is_complete,
+                "extracted_info": {},
+            }
+
         try:
             # Create concise onboarding prompt (minimize tokens)
             onboarding_prompt = PromptTemplate(
@@ -106,21 +121,26 @@ Assistant:"""
             
             return {
                 "message": response,
+                "response": response,
                 "next_question": None if is_complete else response,
                 "is_complete": is_complete,
+                "extracted_info": {},
             }
             
         except Exception as e:
             print(f"Error in generate_onboarding_response: {e}")
             return {
                 "message": "Tell me about your learning goals!",
+                "response": "Tell me about your learning goals!",
                 "next_question": None,
                 "is_complete": False,
+                "extracted_info": {},
             }
     
     async def generate_project_recommendations(
         self,
         user_preferences: Dict,
+        context_projects: Optional[List[Dict]] = None,
         count: int = 5,
     ) -> List[Dict]:
         """
@@ -133,6 +153,24 @@ Assistant:"""
         Returns:
             List of project recommendations
         """
+        interests = user_preferences.get("interests", [])
+        goal = user_preferences.get("primary_goal", "learning")
+
+        if not self.llm:
+            # Deterministic fallback when LLM is unavailable.
+            return [
+                {
+                    "title": f"{interest.title()} Starter Project {idx + 1}",
+                    "description": f"Build a practical {interest} project aligned to your goal: {goal}.",
+                    "difficulty": user_preferences.get("experience_level", "intermediate"),
+                    "domain": interest,
+                    "estimated_duration": "3-4 weeks",
+                    "tech_stack": user_preferences.get("skills", [])[:3] or ["Python"],
+                    "skills_to_learn": [interest],
+                }
+                for idx, interest in enumerate((interests or ["software development"])[:count])
+            ]
+
         try:
             # Build context from user preferences
             user_context = f"""
@@ -153,10 +191,19 @@ Interests: {', '.join(user_preferences.get('interests', []))}
                 f"- {proj['content'][:200]}"
                 for proj in similar_projects[:3]
             ]) if similar_projects else "No existing templates"
+
+            if context_projects:
+                rag_context = "\n".join(
+                    [rag_context]
+                    + [
+                        f"- {item.get('title', '')}: {item.get('description', '')}"
+                        for item in context_projects[:3]
+                    ]
+                )
             
             # Generate recommendations with minimal prompt
             prompt = PromptTemplate(
-                input_variables=["context", "user_info", "count"],
+                input_variables=["rag_context", "user_info", "count"],
                 template="""Generate {count} project ideas for:
 
 {user_info}
@@ -177,7 +224,7 @@ Format as numbered list."""
             chain = LLMChain(llm=self.llm, prompt=prompt)
             
             response = chain.run(
-                context=rag_context,
+                rag_context=rag_context,
                 user_info=user_context,
                 count=count,
             )
@@ -204,6 +251,17 @@ Format as numbered list."""
         Returns:
             Complete project structure
         """
+        if not self.llm:
+            return {
+                "raw_response": (
+                    f"1. {prompt.title()}\n"
+                    f"Description: Build a practical project for {user_level} learners\n"
+                    "Tech Stack: Python, FastAPI, React\n"
+                    "Duration: 4 weeks\n"
+                    f"Difficulty: {user_level}"
+                )
+            }
+
         try:
             project_prompt = PromptTemplate(
                 input_variables=["idea", "level"],
@@ -248,6 +306,13 @@ Be specific and practical."""
         Returns:
             Analysis and feedback
         """
+        if not self.llm:
+            return {
+                "approved": True,
+                "feedback": "Submission received. Keep iterating and share your next checkpoint.",
+                "suggestions": [],
+            }
+
         try:
             # Use concise prompt to save tokens
             feedback_prompt = PromptTemplate(
@@ -290,6 +355,8 @@ Be encouraging."""
         query: str,
         collection_filter: Optional[Dict] = None,
         top_k: int = 3,
+        context: Optional[str] = None,
+        chat_history: Optional[Any] = None,
     ) -> str:
         """
         Generate response using RAG (Retrieval Augmented Generation)
@@ -303,25 +370,40 @@ Be encouraging."""
             Generated response
         """
         try:
-            # Retrieve relevant context using local embeddings
-            context_docs = await qdrant_service.search(
-                query=query,
-                top_k=top_k,
-                filters=collection_filter,
-            )
-            
-            # Build context
-            context = "\n\n".join([
-                f"Context {i+1}: {doc['content']}"
-                for i, doc in enumerate(context_docs)
-            ]) if context_docs else "No relevant context found"
+            resolved_context = context
+            if not resolved_context:
+                # Retrieve relevant context using local embeddings
+                context_docs = await qdrant_service.search(
+                    query=query,
+                    top_k=top_k,
+                    filters=collection_filter,
+                )
+
+                resolved_context = "\n\n".join([
+                    f"Context {i+1}: {doc['content']}"
+                    for i, doc in enumerate(context_docs)
+                ]) if context_docs else "No relevant context found"
+
+            if not self.llm:
+                return f"Based on available context: {resolved_context}"
+
+            history_text = ""
+            if isinstance(chat_history, dict):
+                raw_history = chat_history.get("chat_history", [])
+                history_text = "\n".join([
+                    f"{getattr(msg, 'type', 'message')}: {getattr(msg, 'content', '')}"
+                    for msg in raw_history[-6:]
+                ])
             
             # Generate response with context
             rag_prompt = PromptTemplate(
-                input_variables=["context", "query"],
+                input_variables=["context", "query", "history"],
                 template="""Use this context to answer:
 
 {context}
+
+Conversation history:
+{history}
 
 Question: {query}
 
@@ -329,7 +411,7 @@ Answer (be specific and cite context):"""
             )
             
             chain = LLMChain(llm=self.llm, prompt=rag_prompt)
-            response = chain.run(context=context, query=query)
+            response = chain.run(context=resolved_context, query=query, history=history_text)
             
             return response
             
@@ -356,6 +438,15 @@ Answer (be specific and cite context):"""
         Returns:
             Structured roadmap with milestones, resources, checkpoints
         """
+        if not self.llm:
+            return {
+                "milestones": [],
+                "estimated_duration": requirements.get("estimated_time", "4 weeks"),
+                "resources": available_resources,
+                "checkpoints": [],
+                "raw_response": "MILESTONES:\n1. Setup - 1 week\nCHECKPOINTS:\n1. Basic setup complete",
+            }
+
         try:
             roadmap_prompt = PromptTemplate(
                 input_variables=["project_name", "description", "skills", "level", "time"],
@@ -429,6 +520,13 @@ Keep it concise and actionable."""
         Returns:
             Suggested adjustments
         """
+        if not self.llm:
+            return {
+                "adjustments": "Keep current roadmap pace and add one focused practice session.",
+                "recommended_pace": "normal",
+                "additional_resources": [],
+            }
+
         try:
             adjustment_prompt = PromptTemplate(
                 input_variables=["progress_info", "analysis"],

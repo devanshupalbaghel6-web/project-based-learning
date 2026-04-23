@@ -18,7 +18,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from app.services.llm_service import llm_service
 from app.services.groq_service import groq_service
 from app.services.qdrant_service import qdrant_service
-from app.utils.embeddings import get_embedding
+from app.utils.response_parser import response_parser
 from app.core.config import settings
 
 
@@ -47,6 +47,24 @@ class LearningOrchestrator:
                 memory_key="chat_history"
             )
         return self.user_memories[user_id]
+
+    def _serialize_memory_messages(self, messages: List[Any]) -> List[Dict[str, str]]:
+        """Convert LangChain memory messages into lightweight dicts for model prompts."""
+        serialized: List[Dict[str, str]] = []
+        for msg in messages:
+            role = "assistant"
+            if isinstance(msg, HumanMessage):
+                role = "user"
+            elif isinstance(msg, AIMessage):
+                role = "assistant"
+            elif isinstance(msg, SystemMessage):
+                role = "system"
+
+            serialized.append({
+                "role": role,
+                "content": getattr(msg, "content", ""),
+            })
+        return serialized
     
     # ============================================================================
     # ONBOARDING FLOW
@@ -71,21 +89,36 @@ class LearningOrchestrator:
             }
         """
         memory = self.get_user_memory(user_id)
+
+        chat_history = self._serialize_memory_messages(memory.chat_memory.messages)
         
         # Use Gemini for natural, conversational onboarding
         result = await self.llm_service.generate_onboarding_response(
             user_message=message,
+            conversation_history=chat_history,
             context=context,
-            chat_history=memory.load_memory_variables({})
         )
+
+        response_text = result.get("response") or result.get("message", "")
         
         # Save to memory
         memory.save_context(
             {"input": message},
-            {"output": result["response"]}
+            {"output": response_text}
         )
+
+        extracted_info = result.get("extracted_info", {})
+        if not extracted_info and result.get("is_complete", False):
+            transcript = "\n".join([f"{m['role']}: {m['content']}" for m in chat_history])
+            transcript = f"{transcript}\nuser: {message}\nassistant: {response_text}".strip()
+            extracted_info = response_parser.parse_onboarding_extraction(transcript)
         
-        return result
+        return {
+            "response": response_text,
+            "extracted_info": extracted_info,
+            "next_question": result.get("next_question"),
+            "is_complete": result.get("is_complete", False),
+        }
     
     # ============================================================================
     # PROJECT GENERATION
@@ -110,36 +143,33 @@ class LearningOrchestrator:
         """
         projects = []
         
-        # Step 1: Analyze user profile (Groq - lightweight)
-        skills = user_profile.get("skills", [])
         interests = user_profile.get("interests", [])
         experience_level = user_profile.get("experience_level", "beginner")
-        
-        # Step 2: RAG - Find similar projects in vector DB
-        query = f"Projects for {experience_level} developer interested in {', '.join(interests)}"
-        query_embedding = get_embedding(query)
-        
-        similar_projects = self.qdrant_service.search(
-            query_embedding=query_embedding,
-            limit=10,
-            filter_dict={"type": "project"}
-        )
-        
-        # Extract context from similar projects
-        context_projects = [
-            {
-                "title": p["payload"].get("title", ""),
-                "description": p["payload"].get("description", ""),
-                "skills": p["payload"].get("skills", [])
-            }
-            for p in similar_projects
-        ]
+
+        # Step 1: Gather context from existing user-scoped vector data when available.
+        context_projects: List[Dict] = []
+        project_query = f"{experience_level} projects for {', '.join(interests)}".strip()
+        if project_query:
+            similar_projects = await self.qdrant_service.search(
+                query=project_query,
+                top_k=8,
+                filters={"type": "project_template"},
+            )
+
+            context_projects = [
+                {
+                    "title": p.get("metadata", {}).get("title", ""),
+                    "description": p.get("content", ""),
+                    "skills": p.get("metadata", {}).get("skills", []),
+                }
+                for p in similar_projects
+            ]
         
         # Step 3: Generate custom projects with Gemini (using RAG context)
         generated_projects = await self.llm_service.generate_project_recommendations(
-            user_profile=user_profile,
+            user_preferences=user_profile,
             context_projects=context_projects,
-            count=count
+            count=count,
         )
         
         projects.extend(generated_projects)
@@ -183,13 +213,18 @@ class LearningOrchestrator:
         resources_by_skill = {}
         
         for skill in required_skills:
-            query_embedding = get_embedding(f"Learn {skill} tutorial guide")
-            similar_resources = self.qdrant_service.search(
-                query_embedding=query_embedding,
-                limit=5,
-                filter_dict={"type": "resource", "skill": skill}
+            similar_resources = await self.qdrant_service.search(
+                query=f"Learn {skill} tutorial guide",
+                top_k=5,
+                filters={"type": "resource", "skill": skill, "user_id": user_id},
             )
-            resources_by_skill[skill] = [r["payload"] for r in similar_resources]
+            resources_by_skill[skill] = [
+                {
+                    "content": r.get("content", ""),
+                    **r.get("metadata", {}),
+                }
+                for r in similar_resources
+            ]
         
         # Step 3: Generate structured roadmap (Gemini - complex reasoning)
         roadmap = await self.llm_service.generate_roadmap(
@@ -205,7 +240,8 @@ class LearningOrchestrator:
         self,
         user_id: str,
         roadmap_id: str,
-        user_progress: Dict
+        reason: str = "",
+        user_progress: Optional[Dict] = None,
     ) -> Dict:
         """
         Dynamically adjust roadmap based on user progress.
@@ -213,15 +249,23 @@ class LearningOrchestrator:
         Uses Gemini to analyze progress and suggest adjustments.
         """
         # Analyze progress patterns (Groq - classification)
+        user_progress = user_progress or {}
+        analysis_payload = {
+            **user_progress,
+            "reason": reason,
+            "user_id": user_id,
+            "roadmap_id": roadmap_id,
+        }
+
         progress_analysis = self.groq_service.assess_difficulty(
-            content=str(user_progress),
-            user_skills=user_progress.get("completed_skills", [])
+            content=str(analysis_payload),
+            user_skills=user_progress.get("completed_skills", []),
         )
         
         # Generate roadmap adjustments (Gemini - strategic planning)
         adjustments = await self.llm_service.suggest_roadmap_adjustments(
             roadmap_id=roadmap_id,
-            progress=user_progress,
+            progress=analysis_payload,
             analysis=progress_analysis
         )
         
@@ -300,11 +344,18 @@ class LearningOrchestrator:
         )
         
         # Step 5: Store in Qdrant for future RAG
-        await self._store_resources_in_vector_db(ranked_resources)
+        await self._store_resources_in_vector_db(
+            ranked_resources,
+            user_id=user_profile.get("user_id"),
+        )
         
         return ranked_resources
     
-    async def _store_resources_in_vector_db(self, resources: List[Dict]):
+    async def _store_resources_in_vector_db(
+        self,
+        resources: List[Dict],
+        user_id: Optional[str] = None,
+    ):
         """Store resources in Qdrant for future retrieval"""
         documents = []
         
@@ -313,7 +364,7 @@ class LearningOrchestrator:
             text = f"{resource.get('title', '')} {resource.get('description', '')}"
             
             documents.append({
-                "text": text,
+                "content": text,
                 "metadata": {
                     "type": "resource",
                     "url": resource.get("url", ""),
@@ -321,12 +372,14 @@ class LearningOrchestrator:
                     "source": resource.get("source", ""),
                     "skills": resource.get("skills", []),
                     "difficulty": resource.get("difficulty", "intermediate"),
-                    "resource_type": resource.get("type", "other")
+                    "resource_type": resource.get("type", "other"),
+                    "skill": (resource.get("skills") or [None])[0],
+                    "user_id": user_id,
                 }
             })
         
         if documents:
-            self.qdrant_service.add_documents(documents)
+            await self.qdrant_service.add_documents(documents)
     
     # ============================================================================
     # CONTEXT-AWARE Q&A
@@ -352,16 +405,19 @@ class LearningOrchestrator:
         memory = self.get_user_memory(user_id)
         
         # Search for relevant context (RAG)
-        query_embedding = get_embedding(question)
-        relevant_docs = self.qdrant_service.search(
-            query_embedding=query_embedding,
-            limit=5,
-            filter_dict={"type": context_type} if context_type != "general" else None
+        filters: Dict[str, Any] = {"user_id": user_id}
+        if context_type != "general":
+            filters["type"] = context_type
+
+        relevant_docs = await self.qdrant_service.search(
+            query=question,
+            top_k=5,
+            filters=filters,
         )
         
         # Extract context
         context = "\n\n".join([
-            doc["payload"].get("text", "") or doc["payload"].get("description", "")
+            doc.get("content", "")
             for doc in relevant_docs
         ])
         

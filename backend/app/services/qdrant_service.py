@@ -6,6 +6,8 @@ More efficient than ChromaDB with better performance.
 """
 
 from typing import List, Dict, Optional
+from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
@@ -29,28 +31,62 @@ class QdrantService:
         self.collection_name = settings.QDRANT_COLLECTION
         self.embedding_dim = embedding_service.get_dimension()
         self._initialize_client()
+
+    def _init_embedded_persistent_client(self):
+        """Initialize embedded Qdrant client with persisted local storage."""
+        local_path = Path(settings.QDRANT_LOCAL_PATH).expanduser()
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"Initializing embedded persisted Qdrant at: {local_path}")
+        self.client = QdrantClient(path=str(local_path))
+
+    @staticmethod
+    def _normalize_cloud_url(url: str) -> str:
+        """Ensure cloud URL includes explicit Qdrant API port when omitted."""
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return url
+        if parsed.port is not None:
+            return url
+        return urlunparse(parsed._replace(netloc=f"{parsed.hostname}:6333"))
     
     def _initialize_client(self):
-        """Initialize Qdrant client (memory, local server, or cloud mode)"""
+        """Initialize Qdrant client (cloud, memory, server, or embedded persisted mode)."""
         try:
             if settings.QDRANT_USE_CLOUD and settings.QDRANT_URL and settings.QDRANT_API_KEY:
                 # Cloud mode (production)
-                print(f"Connecting to Qdrant Cloud: {settings.QDRANT_URL}")
-                self.client = QdrantClient(
-                    url=settings.QDRANT_URL,
-                    api_key=settings.QDRANT_API_KEY,
-                )
+                try:
+                    cloud_url = self._normalize_cloud_url(settings.QDRANT_URL)
+                    print(f"Connecting to Qdrant Cloud: {cloud_url}")
+                    self.client = QdrantClient(
+                        url=cloud_url,
+                        api_key=settings.QDRANT_API_KEY,
+                    )
+                    self.client.get_collections()
+                    print("✅ Connected to Qdrant Cloud")
+                except Exception as cloud_error:
+                    print(f"⚠️ Qdrant cloud unavailable ({cloud_error}). Falling back to embedded persisted mode.")
+                    self._init_embedded_persistent_client()
             elif settings.QDRANT_USE_MEMORY:
                 # In-memory mode (for development)
                 print("Initializing Qdrant in memory mode...")
                 self.client = QdrantClient(":memory:")
             else:
-                # Local server mode
-                print(f"Connecting to Qdrant at {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
-                self.client = QdrantClient(
-                    host=settings.QDRANT_HOST,
-                    port=settings.QDRANT_PORT,
-                )
+                # Try local server first. If unavailable, fallback to embedded persisted mode.
+                try:
+                    print(f"Connecting to Qdrant at {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
+                    self.client = QdrantClient(
+                        host=settings.QDRANT_HOST,
+                        port=settings.QDRANT_PORT,
+                    )
+                    # Verify server connectivity before proceeding.
+                    self.client.get_collections()
+                    print("✅ Connected to Qdrant server")
+                except Exception as server_error:
+                    print(
+                        "⚠️ Qdrant server unavailable "
+                        f"({server_error}). Falling back to embedded persisted mode."
+                    )
+                    self._init_embedded_persistent_client()
             
             # Create collection if it doesn't exist
             self._ensure_collection()
@@ -59,7 +95,12 @@ class QdrantService:
             
         except Exception as e:
             print(f"❌ Error initializing Qdrant: {e}")
-            self.client = None
+            try:
+                print("⚠️ Falling back to in-memory Qdrant mode")
+                self.client = QdrantClient(":memory:")
+                self._ensure_collection()
+            except Exception:
+                self.client = None
     
     def _ensure_collection(self):
         """Ensure collection exists with correct configuration"""

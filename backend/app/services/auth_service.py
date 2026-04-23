@@ -11,7 +11,12 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use pbkdf2_sha256 as primary scheme to avoid bcrypt backend
+# incompatibilities in some environments.
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256", "bcrypt"],
+    deprecated="auto",
+)
 
 
 class AuthService:

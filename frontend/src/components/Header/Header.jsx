@@ -1,13 +1,22 @@
 import React from 'react';
 import { Search, Bell, Menu } from 'lucide-react';
-import Button from '@components/Button';
 
 /**
  * Header Component
  * @param {object} props
  * @param {function} props.onMenuClick - Menu toggle handler
+ * @param {object} props.currentUser - Authenticated user
+ * @param {function} props.onLogout - Logout handler
  */
-const Header = ({ onMenuClick }) => {
+const Header = ({ onMenuClick, currentUser, onLogout }) => {
+  const name = currentUser?.name || currentUser?.full_name || 'User';
+  const initials = name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <header className="bg-white border-b border-secondary-200 sticky top-0 z-30">
       <div className="flex items-center justify-between px-4 lg:px-8 py-4">
@@ -40,8 +49,19 @@ const Header = ({ onMenuClick }) => {
           </button>
 
           {/* Avatar */}
+          <div className="hidden sm:flex flex-col items-end">
+            <p className="text-sm font-semibold text-secondary-800">{name}</p>
+            <button
+              type="button"
+              className="text-xs text-secondary-500 hover:text-secondary-700"
+              onClick={() => onLogout?.()}
+            >
+              Sign out
+            </button>
+          </div>
+
           <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center cursor-pointer hover:ring-2 ring-primary-300 transition-all">
-            <span className="text-white font-semibold text-sm">AC</span>
+            <span className="text-white font-semibold text-sm">{initials}</span>
           </div>
         </div>
       </div>

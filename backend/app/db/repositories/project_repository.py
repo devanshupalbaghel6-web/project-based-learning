@@ -65,7 +65,7 @@ class ProjectRepository:
             {"_id": ObjectId(project_id)},
             {"$set": update_data}
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def update_status(self, project_id: str, status: str) -> bool:
         """Update project status"""

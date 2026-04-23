@@ -9,6 +9,7 @@ from app.db.repositories.user_repository import UserRepository
 from app.db.repositories.project_repository import ProjectRepository
 from app.db.repositories.roadmap_repository import RoadmapRepository
 from app.db.repositories.progress_repository import ProgressRepository
+from app.db.repositories.resource_repository import ResourceRepository
 
 
 class RepositoryManager:
@@ -19,6 +20,7 @@ class RepositoryManager:
         self.projects = ProjectRepository(db)
         self.roadmaps = RoadmapRepository(db)
         self.progress = ProgressRepository(db)
+        self.resources = ResourceRepository(db)
 
 
 # Global repository manager instance

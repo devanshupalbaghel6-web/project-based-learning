@@ -5,7 +5,16 @@ import Button from '@components/Button';
 import ProgressBar from '@components/ProgressBar';
 import { Clock, Code } from 'lucide-react';
 
-const ProjectCard = ({ project }) => {
+const ProjectCard = ({ project, onAction }) => {
+  const difficulty = String(project.difficulty || 'intermediate');
+  const difficultyLabel = `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1)}`;
+  const duration = project.estimated_duration || (project.duration_weeks ? `${project.duration_weeks} weeks` : 'Flexible');
+  const tech = project.tech || project.tech_stack?.[0] || 'Multiple';
+  const progressValue =
+    project.progress !== undefined
+      ? Number(project.progress)
+      : Number(project.progress_percentage || 0);
+
   return (
     <Card hoverable className="h-full flex flex-col">
       <div className="flex items-start justify-between mb-4">
@@ -21,42 +30,43 @@ const ProjectCard = ({ project }) => {
 
       {/* Tags */}
       <div className="flex flex-wrap gap-2 mb-4">
-        <Badge variant={project.difficulty === 'Beginner' ? 'success' : project.difficulty === 'Intermediate' ? 'warning' : 'error'}>
-          {project.difficulty}
+        <Badge variant={difficulty === 'beginner' ? 'success' : difficulty === 'intermediate' ? 'warning' : 'error'}>
+          {difficultyLabel}
         </Badge>
-        <Badge variant="primary">{project.domain}</Badge>
+        <Badge variant="primary">{project.domain || 'general'}</Badge>
       </div>
 
       {/* Meta Info */}
       <div className="flex items-center gap-4 text-sm text-secondary-600 mb-4">
         <div className="flex items-center gap-1">
           <Clock size={16} />
-          <span>{project.duration}</span>
+          <span>{duration}</span>
         </div>
         <div className="flex items-center gap-1">
           <Code size={16} />
-          <span>{project.tech}</span>
+          <span>{tech}</span>
         </div>
       </div>
 
       {/* Progress */}
-      {project.progress !== undefined && (
+      {Number.isFinite(progressValue) && (
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium text-secondary-700">Progress</span>
-            <span className="text-sm font-semibold text-primary-600">{project.progress}%</span>
+            <span className="text-sm font-semibold text-primary-600">{Math.round(progressValue)}%</span>
           </div>
-          <ProgressBar value={project.progress} />
+          <ProgressBar value={Math.round(progressValue)} />
         </div>
       )}
 
       {/* Action Button */}
       <div className="mt-auto pt-4">
         <Button 
-          variant={project.progress !== undefined ? "primary" : "outline"} 
+          variant={project.status === 'in_progress' ? 'primary' : 'outline'}
           className="w-full"
+          onClick={() => onAction?.(project)}
         >
-          {project.progress !== undefined ? 'Resume Project' : 'Start Project'}
+          {project.status === 'in_progress' ? 'Resume Project' : 'Start Project'}
         </Button>
       </div>
     </Card>

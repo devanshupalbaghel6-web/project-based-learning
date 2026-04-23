@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
+from pydantic import BaseModel
 from app.models import Project, ProjectCreate, ProjectUpdate
 from app.services.orchestrator import orchestrator
 from app.services.scraper_service import scraper_service
@@ -12,6 +13,11 @@ from app.services.llm_service import llm_service
 from app.services.progress_service import progress_service
 
 router = APIRouter()
+
+
+class CheckpointSubmissionRequest(BaseModel):
+    screenshot_url: str
+    notes: str
 
 
 @router.get("/", response_model=List[Project])
@@ -59,7 +65,7 @@ async def get_recommended_projects(
     user_profile = {
         "experience_level": user.get("experience_level", "beginner"),
         "interests": user.get("interests", []),
-        "skills": user.get("current_skills", []),
+        "skills": user.get("skills", user.get("current_skills", [])),
         "primary_goal": user.get("primary_goal", "learning")
     }
     
@@ -227,11 +233,11 @@ async def get_project_roadmap(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Check if roadmap already exists
-    existing_roadmaps = await repos.roadmaps.find_by_project(project_id)
-    
-    if existing_roadmaps:
+    existing_roadmap = await repos.roadmaps.find_by_project(project_id)
+
+    if existing_roadmap:
         # Return existing roadmap with milestones
-        roadmap = existing_roadmaps[0]
+        roadmap = existing_roadmap
         roadmap_id = roadmap["_id"]
         
         # Fetch milestones
@@ -250,7 +256,7 @@ async def get_project_roadmap(
     user = await repos.users.find_by_id(user_id)
     user_profile = {
         "experience_level": user.get("experience_level", "beginner"),
-        "skills": user.get("current_skills", [])
+        "skills": user.get("skills", user.get("current_skills", []))
     }
     
     # Generate roadmap using orchestrator
@@ -324,14 +330,20 @@ async def get_project_roadmap(
 async def submit_checkpoint(
     project_id: str,
     checkpoint_id: str,
-    screenshot_url: str,
-    notes: str,
+    submission: CheckpointSubmissionRequest,
     user_id: str = Depends(get_current_user_id)
 ):
     """
     Submit a checkpoint with screenshot and notes for AI analysis
     """
     repos = get_repos()
+
+    project = await repos.projects.find_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if project.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
     
     # Fetch checkpoint from database
     checkpoint = await repos.roadmaps.find_checkpoint_by_id(checkpoint_id)
@@ -342,18 +354,28 @@ async def submit_checkpoint(
     # Analyze submission with LLM
     analysis = await llm_service.analyze_checkpoint_submission(
         checkpoint=checkpoint,
-        screenshot_url=screenshot_url,
-        user_notes=notes
+        screenshot_url=submission.screenshot_url,
+        user_notes=submission.notes
     )
     
     # Get milestone and roadmap for this checkpoint
     milestone = await repos.roadmaps.find_milestone_by_id(checkpoint["milestone_id"])
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+
     roadmap_id = milestone["roadmap_id"]
+
+    roadmap = await repos.roadmaps.find_by_id(roadmap_id)
+    if not roadmap:
+        raise HTTPException(status_code=404, detail="Roadmap not found")
+
+    if roadmap.get("project_id") != project_id or roadmap.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized for this checkpoint")
     
     # Submit checkpoint
     submission_data = {
-        "screenshot_url": screenshot_url,
-        "notes": notes,
+        "screenshot_url": submission.screenshot_url,
+        "notes": submission.notes,
         "ai_feedback": analysis.get("feedback", ""),
         "submitted_at": datetime.utcnow()
     }
@@ -370,8 +392,8 @@ async def submit_checkpoint(
         checkpoint_id=checkpoint_id,
         submission_data={
             "milestone_id": str(milestone["_id"]),
-            "screenshot_url": screenshot_url,
-            "notes": notes,
+            "screenshot_url": submission.screenshot_url,
+            "notes": submission.notes,
             "analysis": analysis
         }
     )

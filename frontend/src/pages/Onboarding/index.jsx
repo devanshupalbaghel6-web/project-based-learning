@@ -1,9 +1,18 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChatInterface, OnboardingProgress } from './components';
 import { ArrowRight } from 'lucide-react';
-import Button from '@components/Button';
+import { useAuth } from '@/context/AuthContext';
 
 const OnboardingPage = () => {
+  const navigate = useNavigate();
+  const { refreshUser } = useAuth();
+
+  const handleOnboardingComplete = async () => {
+    await refreshUser();
+    navigate('/dashboard', { replace: true });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50">
       {/* Header */}
@@ -17,7 +26,10 @@ const OnboardingPage = () => {
               AI-Learn Hub
             </h1>
           </div>
-          <button className="text-sm text-secondary-600 hover:text-secondary-900">
+          <button
+            className="text-sm text-secondary-600 hover:text-secondary-900"
+            onClick={() => navigate('/dashboard')}
+          >
             Skip to Dashboard <ArrowRight className="inline ml-1" size={16} />
           </button>
         </div>
@@ -46,7 +58,7 @@ const OnboardingPage = () => {
 
               {/* Chat Content */}
               <div className="bg-secondary-50 h-[600px] lg:h-[700px]">
-                <ChatInterface />
+                <ChatInterface onComplete={handleOnboardingComplete} />
               </div>
             </div>
           </div>

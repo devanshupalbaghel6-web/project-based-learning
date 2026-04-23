@@ -1,29 +1,106 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardStats, RecentActivity } from './components';
 import Card from '@components/Card';
 import Button from '@components/Button';
+import Spinner from '@components/Spinner';
 import { Calendar, ArrowRight } from 'lucide-react';
+import projectsService from '@services/projects';
+import progressService from '@services/progress';
+import { useAuth } from '@/context/AuthContext';
 
 const DashboardPage = () => {
-  const upcomingDeadlines = [
-    { id: 1, title: 'RAG Chatbot Prototype Due', date: 'Oct 15' },
-    { id: 2, title: 'E-commerce Backend Review', date: 'Oct 22' },
-  ];
+  const { user } = useAuth();
+  const [stats, setStats] = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadDashboardData = async () => {
+      setIsLoading(true);
+      setError('');
+
+      try {
+        const [projectsData, statsData, recentActivity] = await Promise.all([
+          projectsService.getProjects(null, 0, 25),
+          progressService.getStats(),
+          progressService.getRecentActivity(7),
+        ]);
+
+        if (!mounted) {
+          return;
+        }
+
+        setProjects(Array.isArray(projectsData) ? projectsData : []);
+        setStats(statsData);
+        setActivities(recentActivity?.activities || []);
+      } catch (loadError) {
+        if (!mounted) {
+          return;
+        }
+        setError('Unable to load dashboard data right now.');
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadDashboardData();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const currentProject = useMemo(() => {
+    if (!projects.length) {
+      return null;
+    }
+
+    return projects.find((item) => item.status === 'in_progress') || projects[0];
+  }, [projects]);
+
+  const upcomingDeadlines = useMemo(
+    () =>
+      activities.slice(0, 3).map((item, index) => ({
+        id: item._id || index,
+        title: item.action ? item.action.replace(/_/g, ' ') : 'Activity',
+        date: item.timestamp ? new Date(item.timestamp).toLocaleDateString() : 'Today',
+      })),
+    [activities]
+  );
+
+  const projectProgress = Math.round(
+    Number(currentProject?.progress_percentage ?? currentProject?.progress ?? 0)
+  );
+
+  if (isLoading) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="font-heading font-bold text-3xl mb-2">
-          Welcome back, Alex! 👋
+          Welcome back, {user?.name || user?.full_name || 'Learner'}! 👋
         </h1>
         <p className="text-secondary-600">
           Here's what's happening with your learning journey today
         </p>
+        {error && <p className="text-sm text-error-DEFAULT mt-2">{error}</p>}
       </div>
 
       {/* Stats */}
-      <DashboardStats />
+      <DashboardStats stats={stats} />
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -34,23 +111,28 @@ const DashboardPage = () => {
               Continue Learning
             </h2>
             <div className="bg-gradient-to-br from-primary-50 to-primary-100 rounded-xl p-6 border border-primary-200">
-              <h3 className="font-heading font-bold text-xl mb-2">
-                AI-Powered Sentiment Analysis App
-              </h3>
-              <p className="text-secondary-700 mb-4">
-                Building a web app that analyzes social media comments using NLP models
-              </p>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-medium">Overall Progress</span>
-                <span className="text-sm font-bold text-primary-600">75%</span>
-              </div>
-              <div className="w-full bg-white rounded-full h-3 mb-4">
-                <div className="bg-gradient-to-r from-primary-500 to-primary-600 h-3 rounded-full" style={{ width: '75%' }}></div>
-              </div>
-              <div className="flex gap-3">
-                <Button>Continue Project</Button>
-                <Button variant="outline">View Roadmap</Button>
-              </div>
+              {currentProject ? (
+                <>
+                  <h3 className="font-heading font-bold text-xl mb-2">{currentProject.title}</h3>
+                  <p className="text-secondary-700 mb-4">{currentProject.description}</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-sm font-medium">Overall Progress</span>
+                    <span className="text-sm font-bold text-primary-600">{projectProgress}%</span>
+                  </div>
+                  <div className="w-full bg-white rounded-full h-3 mb-4">
+                    <div
+                      className="bg-gradient-to-r from-primary-500 to-primary-600 h-3 rounded-full"
+                      style={{ width: `${projectProgress}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button>Continue Project</Button>
+                    <Button variant="outline">View Roadmap</Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-secondary-700">No active project yet. Generate one from the Projects page.</p>
+              )}
             </div>
           </Card>
 
@@ -96,11 +178,14 @@ const DashboardPage = () => {
                   </span>
                 </div>
               ))}
+              {upcomingDeadlines.length === 0 && (
+                <p className="text-sm text-secondary-500">No recent actions yet.</p>
+              )}
             </div>
           </Card>
 
           {/* Recent Activity */}
-          <RecentActivity />
+          <RecentActivity activities={activities} />
         </div>
       </div>
     </div>

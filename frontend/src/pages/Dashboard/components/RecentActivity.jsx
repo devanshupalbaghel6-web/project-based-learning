@@ -1,6 +1,19 @@
 import React from 'react';
 import Card from '@components/Card';
 
+const formatRelativeTime = (timestamp) => {
+  if (!timestamp) return 'Just now';
+  const eventDate = new Date(timestamp);
+  const now = new Date();
+  const diffMs = Math.max(now.getTime() - eventDate.getTime(), 0);
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffHours < 1) return 'Less than an hour ago';
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+};
+
 const ActivityItem = ({ activity }) => (
   <div className="flex items-start gap-3 pb-4 last:pb-0">
     <div className={`w-2 h-2 rounded-full mt-2 ${
@@ -15,19 +28,22 @@ const ActivityItem = ({ activity }) => (
   </div>
 );
 
-const RecentActivity = () => {
-  const activities = [
-    { id: 1, type: 'completed', title: 'Completed Module: Intro to NLP', time: '2 hours ago' },
-    { id: 2, type: 'started', title: 'Started Project: Sentiment Analysis', time: '1 day ago' },
-    { id: 3, type: 'milestone', title: 'Reached Checkpoint 3: Data Collection', time: '2 days ago' },
-    { id: 4, type: 'completed', title: 'Completed Resource: PyTorch Tutorial', time: '3 days ago' },
-  ];
+const RecentActivity = ({ activities = [] }) => {
+  const mappedActivities = activities.map((item, index) => ({
+    id: item._id || item.id || index,
+    type: item.action?.includes('completed') ? 'completed' : item.action?.includes('started') ? 'started' : 'milestone',
+    title: item.action ? item.action.replace(/_/g, ' ') : 'Activity',
+    time: formatRelativeTime(item.timestamp),
+  }));
 
   return (
     <Card>
       <h3 className="font-heading font-semibold text-xl mb-4">Recent Activity</h3>
       <div className="space-y-4">
-        {activities.map((activity) => (
+        {mappedActivities.length === 0 && (
+          <p className="text-sm text-secondary-500">No recent activity yet. Start a project to see your timeline.</p>
+        )}
+        {mappedActivities.map((activity) => (
           <ActivityItem key={activity.id} activity={activity} />
         ))}
       </div>

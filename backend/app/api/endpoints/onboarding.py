@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from app.models import ChatRequest, ChatResponse, OnboardingData
 from app.services.orchestrator import orchestrator
-from app.api.dependencies.auth import get_current_user_id, get_optional_user_id
+from app.api.dependencies.auth import get_current_user_id
 from app.db.repositories import get_repos
 from app.utils.response_parser import response_parser
 
@@ -12,17 +12,13 @@ router = APIRouter()
 @router.post("/chat", response_model=ChatResponse)
 async def onboarding_chat(
     request: ChatRequest,
-    user_id: str = Depends(get_optional_user_id)
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Handle onboarding chat conversation with LLM.
     
     Uses orchestrator to manage conversation flow and extract user profile.
     """
-    # Use authenticated user ID if available, otherwise use from request or generate temp
-    if not user_id:
-        user_id = request.user_id or f"temp_{request.message[:8]}"
-    
     # Process message through orchestrator
     result = await orchestrator.process_onboarding_message(
         user_id=user_id,
@@ -30,8 +26,8 @@ async def onboarding_chat(
         context=request.context or {}
     )
     
-    # If onboarding complete and user is authenticated, save profile
-    if result.get("is_complete") and user_id.startswith("temp_") is False:
+    # Persist extracted onboarding profile for this authenticated user.
+    if result.get("is_complete"):
         repos = get_repos()
         
         # Extract and save user profile

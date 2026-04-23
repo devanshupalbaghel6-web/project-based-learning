@@ -23,9 +23,19 @@ const navigationItems = [
  * Sidebar Component
  * @param {object} props
  * @param {boolean} props.isOpen - Sidebar open state (mobile)
+ * @param {object} props.currentUser - Authenticated user
+ * @param {function} props.onLogout - Logout handler
  */
-const Sidebar = ({ isOpen = true }) => {
+const Sidebar = ({ isOpen = true, currentUser, onLogout }) => {
   const location = useLocation();
+  const name = currentUser?.name || currentUser?.full_name || 'User';
+  const email = currentUser?.email || 'user@example.com';
+  const initials = name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <aside
@@ -71,13 +81,20 @@ const Sidebar = ({ isOpen = true }) => {
       <div className="border-t border-secondary-800 p-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center">
-            <span className="text-white font-semibold">AC</span>
+            <span className="text-white font-semibold">{initials}</span>
           </div>
           <div className="flex-1">
-            <p className="font-medium text-sm">Alex Chen</p>
-            <p className="text-xs text-secondary-400">alex@example.com</p>
+            <p className="font-medium text-sm">{name}</p>
+            <p className="text-xs text-secondary-400">{email}</p>
           </div>
         </div>
+        <button
+          type="button"
+          className="mt-4 text-xs text-secondary-300 hover:text-white"
+          onClick={() => onLogout?.()}
+        >
+          Sign out
+        </button>
       </div>
     </aside>
   );

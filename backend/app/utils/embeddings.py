@@ -32,8 +32,8 @@ class EmbeddingService:
     
     def __init__(self):
         """Initialize with lazy loading"""
-        if self._model is None:
-            self._load_model()
+        # Keep initialization lightweight; load model only when actually needed.
+        pass
     
     def _load_model(self):
         """Load the embedding model (lazy loading)"""
@@ -79,6 +79,8 @@ class EmbeddingService:
             numpy array of embeddings
         """
         if self._model is None:
+            self._load_model()
+        if self._model is None:
             raise RuntimeError("Embedding model not loaded")
         
         if not texts:
@@ -107,6 +109,7 @@ class EmbeddingService:
     
     def get_dimension(self) -> int:
         """Get embedding dimension"""
+        # Return known default without forcing model download at import/startup.
         if self._model is None:
             return 384  # Default for all-MiniLM-L6-v2
         return self._model.get_sentence_embedding_dimension()

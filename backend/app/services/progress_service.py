@@ -12,6 +12,7 @@ from app.models.progress import (
 )
 from app.services.groq_service import groq_service
 from app.services.llm_service import llm_service
+from app.db.repositories import get_repos
 
 
 class ProgressService:
@@ -27,17 +28,26 @@ class ProgressService:
         milestone_id: str
     ) -> ProgressEntry:
         """Record when user starts a milestone"""
-        entry = ProgressEntry(
-            id=f"pe_{datetime.utcnow().timestamp()}",
+        repos = get_repos()
+        payload = {
+            "user_id": user_id,
+            "roadmap_id": roadmap_id,
+            "milestone_id": milestone_id,
+            "action": "started_milestone",
+            "metadata": {"timestamp": datetime.utcnow().isoformat()},
+            "timestamp": datetime.utcnow(),
+        }
+
+        entry_id = await repos.progress.create_entry(payload)
+        return ProgressEntry(
+            id=entry_id,
             user_id=user_id,
             roadmap_id=roadmap_id,
             milestone_id=milestone_id,
             action="started_milestone",
-            metadata={"timestamp": datetime.utcnow().isoformat()}
+            metadata=payload["metadata"],
+            timestamp=payload["timestamp"],
         )
-        
-        # TODO: Save to database
-        return entry
     
     async def track_checkpoint_submission(
         self,
@@ -47,18 +57,28 @@ class ProgressService:
         submission_data: Dict
     ) -> ProgressEntry:
         """Record checkpoint submission"""
-        entry = ProgressEntry(
-            id=f"pe_{datetime.utcnow().timestamp()}",
+        repos = get_repos()
+        payload = {
+            "user_id": user_id,
+            "roadmap_id": roadmap_id,
+            "milestone_id": submission_data.get("milestone_id", ""),
+            "checkpoint_id": checkpoint_id,
+            "action": "submitted_checkpoint",
+            "metadata": submission_data,
+            "timestamp": datetime.utcnow(),
+        }
+
+        entry_id = await repos.progress.create_entry(payload)
+        return ProgressEntry(
+            id=entry_id,
             user_id=user_id,
             roadmap_id=roadmap_id,
-            milestone_id=submission_data.get("milestone_id", ""),
+            milestone_id=payload["milestone_id"],
             checkpoint_id=checkpoint_id,
             action="submitted_checkpoint",
-            metadata=submission_data
+            metadata=submission_data,
+            timestamp=payload["timestamp"],
         )
-        
-        # TODO: Save to database
-        return entry
     
     async def calculate_user_progress(
         self,
@@ -67,28 +87,103 @@ class ProgressService:
     ) -> UserProgress:
         """
         Calculate aggregated user progress.
-        
-        TODO: Fetch from database
         """
-        # Mock data for now
-        progress = UserProgress(
+        repos = get_repos()
+
+        roadmap = await repos.roadmaps.find_by_id(roadmap_id)
+        if not roadmap or roadmap.get("user_id") != user_id:
+            return UserProgress(user_id=user_id, roadmap_id=roadmap_id)
+
+        milestones = await repos.roadmaps.find_milestones_by_roadmap(roadmap_id)
+        milestones_total = len(milestones)
+        milestones_completed = sum(1 for item in milestones if item.get("status") == "completed")
+
+        checkpoints_total = 0
+        checkpoints_completed = 0
+        for milestone in milestones:
+            checkpoint_items = await repos.roadmaps.find_checkpoints_by_milestone(milestone["_id"])
+            checkpoints_total += len(checkpoint_items)
+            checkpoints_completed += sum(1 for cp in checkpoint_items if cp.get("is_completed", False))
+
+        current_milestone = None
+        for milestone in milestones:
+            if milestone.get("status") in {"in_progress", "not_started"}:
+                current_milestone = milestone.get("title")
+                break
+
+        entries = await repos.progress.find_by_roadmap(roadmap_id, limit=500)
+        user_entries = [entry for entry in entries if entry.get("user_id") == user_id]
+
+        last_activity = user_entries[0].get("timestamp") if user_entries else None
+
+        time_spent_hours = 0.0
+        for entry in user_entries:
+            metadata = entry.get("metadata", {}) or {}
+            duration = metadata.get("duration_hours")
+            if isinstance(duration, (int, float)):
+                time_spent_hours += float(duration)
+        if time_spent_hours == 0 and user_entries:
+            time_spent_hours = round(len(user_entries) * 0.5, 2)
+
+        completed_actions = {
+            "checkpoint_completed",
+            "milestone_completed",
+            "submitted_checkpoint",
+        }
+        completed_count = sum(1 for entry in user_entries if entry.get("action") in completed_actions)
+
+        strengths = []
+        if completed_count >= 5:
+            strengths.append("consistency")
+        if checkpoints_completed > 0 and checkpoints_completed == checkpoints_total:
+            strengths.append("execution")
+
+        struggles = []
+        for entry in user_entries:
+            metadata = entry.get("metadata", {}) or {}
+            struggle_items = metadata.get("struggles", [])
+            if isinstance(struggle_items, list):
+                struggles.extend([str(item) for item in struggle_items if item])
+
+        if not struggles:
+            revision_count = sum(1 for entry in user_entries if entry.get("action") in {"needs_revision", "checkpoint_needs_revision"})
+            if revision_count > 0:
+                struggles.append("checkpoint quality")
+
+        skills_acquired = []
+        for milestone in milestones:
+            if milestone.get("status") == "completed":
+                skills_acquired.extend(milestone.get("skills_to_learn", []))
+
+        skills_acquired = list(dict.fromkeys([skill for skill in skills_acquired if skill]))
+        struggles = list(dict.fromkeys(struggles))
+
+        streak_days = await repos.progress.calculate_streak(user_id, roadmap_id)
+
+        average_pace = "normal"
+        if milestones_total > 0:
+            completion_ratio = milestones_completed / milestones_total
+            if completion_ratio > 0.75 and time_spent_hours < 8:
+                average_pace = "fast"
+            elif completion_ratio < 0.25 and time_spent_hours > 15:
+                average_pace = "slow"
+
+        return UserProgress(
             user_id=user_id,
             roadmap_id=roadmap_id,
-            milestones_completed=2,
-            milestones_total=5,
-            checkpoints_completed=4,
-            checkpoints_total=15,
-            current_milestone="Build backend API",
-            time_spent_hours=12.5,
-            average_pace="normal",
-            skills_acquired=["Python", "FastAPI", "REST API"],
-            struggles=["Database optimization"],
-            strengths=["API design", "Error handling"],
-            last_activity=datetime.utcnow(),
-            streak_days=5
+            milestones_completed=milestones_completed,
+            milestones_total=milestones_total,
+            checkpoints_completed=checkpoints_completed,
+            checkpoints_total=checkpoints_total,
+            current_milestone=current_milestone,
+            time_spent_hours=time_spent_hours,
+            average_pace=average_pace,
+            skills_acquired=skills_acquired,
+            struggles=struggles,
+            strengths=strengths,
+            last_activity=last_activity,
+            streak_days=streak_days,
         )
-        
-        return progress
     
     async def analyze_progress(
         self,

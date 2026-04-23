@@ -11,6 +11,7 @@ Tests the complete database integration including:
 import asyncio
 import os
 from dotenv import load_dotenv
+from bson import ObjectId
 
 # Load environment variables
 load_dotenv()
@@ -35,7 +36,7 @@ async def test_database_integration():
     
     # Initialize repositories
     print("\n2. Initializing repositories...")
-    await init_repositories(mongodb.db)
+    init_repositories(mongodb.db)
     repos = get_repos()
     print("✓ Repositories initialized")
     
@@ -206,13 +207,13 @@ async def test_database_integration():
     print("✓ Password verification successful")
     
     # Create JWT token
-    token = auth_service.create_access_token(user_id)
+    token = auth_service.create_access_token({"sub": user_id})
     print(f"✓ JWT token created: {token[:50]}...")
     
     # Decode token
-    decoded_user_id = auth_service.decode_token(token)
-    assert decoded_user_id == user_id
-    print(f"✓ Token decoded successfully: {decoded_user_id}")
+    decoded_payload = auth_service.decode_token(token)
+    assert decoded_payload and decoded_payload.get("sub") == user_id
+    print(f"✓ Token decoded successfully: {decoded_payload.get('sub')}")
     
     # Test fetching user projects
     print("\n12. Testing project queries...")
@@ -237,10 +238,10 @@ async def test_database_integration():
     
     # Cleanup
     print("\n14. Cleaning up test data...")
-    await repos.progress.collection.delete_one({"_id": progress_id})
+    await repos.progress.collection.delete_one({"_id": ObjectId(progress_id)})
     await repos.roadmaps.checkpoints_collection.delete_many({"milestone_id": milestone_2_id})
     await repos.roadmaps.milestones_collection.delete_many({"roadmap_id": roadmap_id})
-    await repos.roadmaps.collection.delete_one({"_id": roadmap_id})
+    await repos.roadmaps.collection.delete_one({"_id": ObjectId(roadmap_id)})
     await repos.projects.delete(project_id)
     await repos.users.delete(user_id)
     print("✓ Test data cleaned up")

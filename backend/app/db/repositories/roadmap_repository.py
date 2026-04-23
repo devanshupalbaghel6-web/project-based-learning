@@ -65,7 +65,7 @@ class RoadmapRepository:
             {"_id": ObjectId(roadmap_id)},
             {"$set": update_data}
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def add_adaptation(self, roadmap_id: str, adaptation: Dict) -> bool:
         """Add an adaptation record to roadmap"""
@@ -78,7 +78,7 @@ class RoadmapRepository:
                 "$set": {"updated_at": datetime.utcnow()}
             }
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def update_progress(self, roadmap_id: str, progress_percentage: float) -> bool:
         """Update roadmap progress"""
@@ -127,7 +127,7 @@ class RoadmapRepository:
             {"_id": ObjectId(milestone_id)},
             {"$set": update_data}
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def update_milestone_status(self, milestone_id: str, status: str) -> bool:
         """Update milestone status"""
@@ -176,7 +176,7 @@ class RoadmapRepository:
             {"_id": ObjectId(checkpoint_id)},
             {"$set": update_data}
         )
-        return result.modified_count > 0
+        return result.modified_count > 0 or result.matched_count > 0
     
     async def submit_checkpoint(
         self,

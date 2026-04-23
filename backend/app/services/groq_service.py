@@ -19,12 +19,13 @@ class GroqService:
     
     def __init__(self):
         """Initialize Groq client and LangChain integration"""
+        self.client = None
+        self.llm = None
+
         if not settings.GROQ_API_KEY:
             print("⚠️ GROQ_API_KEY not set, Groq service will be unavailable")
-            self.client = None
-            self.llm = None
             return
-        
+
         try:
             # Direct Groq client
             self.client = Groq(api_key=settings.GROQ_API_KEY)
@@ -43,6 +44,17 @@ class GroqService:
             print(f"❌ Error initializing Groq: {e}")
             self.client = None
             self.llm = None
+
+    def _invoke_chain(self, chain: LLMChain, payload: Dict, feature: str) -> Optional[str]:
+        """Invoke chain safely and disable Groq LLM on hard model failures."""
+        try:
+            result = chain.invoke(payload)
+            return (result or {}).get("text", "").strip()
+        except Exception as e:
+            print(f"Error in Groq {feature}: {e}")
+            if "decommissioned" in str(e).lower() or "not supported" in str(e).lower():
+                self.llm = None
+            return None
     
     def classify_resource_type(self, url: str, title: str = "") -> str:
         """
@@ -68,9 +80,8 @@ class GroqService:
             )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
-            result = chain.run(url=url, title=title or "N/A")
-            
-            return result.strip().lower()
+            result = self._invoke_chain(chain, {"url": url, "title": title or "N/A"}, "classify_resource_type")
+            return (result or "other").lower()
             
         except Exception as e:
             print(f"Error classifying resource: {e}")
@@ -92,8 +103,9 @@ class GroqService:
             )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
-            result = chain.run(text=text, max_skills=max_skills)
-            
+            result = self._invoke_chain(chain, {"text": text, "max_skills": max_skills}, "extract_skills")
+            if not result:
+                return []
             skills = [s.strip() for s in result.split(",")]
             return [s for s in skills if s][:max_skills]
             
@@ -118,9 +130,8 @@ class GroqService:
             )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
-            result = chain.run(content=content, max_length=max_length)
-            
-            return result.strip()
+            result = self._invoke_chain(chain, {"content": content, "max_length": max_length}, "summarize_content")
+            return result or (content[:max_length] + "..." if len(content) > max_length else content)
             
         except Exception as e:
             print(f"Error summarizing: {e}")
@@ -142,10 +153,16 @@ class GroqService:
             )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
-            result = chain.run(
-                content=content[:500],  # Limit to avoid token overflow
-                skills=", ".join(user_skills) if user_skills else "none"
+            result = self._invoke_chain(
+                chain,
+                {
+                    "content": content[:500],  # Limit to avoid token overflow
+                    "skills": ", ".join(user_skills) if user_skills else "none",
+                },
+                "assess_difficulty",
             )
+            if not result:
+                return "intermediate"
             
             difficulty = result.strip().lower()
             if difficulty not in ["beginner", "intermediate", "advanced"]:
@@ -175,13 +192,16 @@ class GroqService:
             )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
-            result = chain.run(
-                intent=user_intent,
-                skills=", ".join(context.get("skills", [])),
-                goal=context.get("goal", "general learning")
+            result = self._invoke_chain(
+                chain,
+                {
+                    "intent": user_intent,
+                    "skills": ", ".join(context.get("skills", [])),
+                    "goal": context.get("goal", "general learning"),
+                },
+                "generate_search_query",
             )
-            
-            return result.strip()
+            return result or user_intent
             
         except Exception as e:
             print(f"Error generating search query: {e}")
@@ -212,7 +232,14 @@ class GroqService:
             )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
-            result = chain.run(description=project_description)
+            result = self._invoke_chain(chain, {"description": project_description}, "parse_project_requirements")
+            if not result:
+                return {
+                    "skills": [],
+                    "estimated_time": "unknown",
+                    "difficulty": "intermediate",
+                    "prerequisites": []
+                }
             
             # Parse the structured response
             requirements = {

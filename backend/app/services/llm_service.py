@@ -16,6 +16,7 @@ Optimizations for free tier:
 """
 
 from typing import Any, Dict, List, Optional
+import logging
 from app.core.config import settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import LLMChain
@@ -23,6 +24,9 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 import google.generativeai as genai
 from app.services.qdrant_service import qdrant_service
+from app.utils.response_parser import response_parser
+
+logger = logging.getLogger(__name__)
 
 
 class LLMService:
@@ -48,6 +52,21 @@ class LLMService:
             print(f"✅ LLM initialized: {settings.GEMINI_MODEL}")
         else:
             print("⚠️  GOOGLE_API_KEY not set – LLM features disabled. Add it to .env to enable AI.")
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        # Lightweight approximation for observability without external tokenizers.
+        return max(1, int(len(text or "") / 4))
+
+    def _log_prompt_observability(self, feature: str, prompt: str, extra: Optional[Dict[str, Any]] = None):
+        payload = {
+            "feature": feature,
+            "chars": len(prompt or ""),
+            "estimated_tokens": self._estimate_tokens(prompt or ""),
+        }
+        if extra:
+            payload.update(extra)
+        logger.info("llm_prompt_metrics %s", payload)
     
     async def generate_onboarding_response(
         self,
@@ -80,51 +99,62 @@ class LLMService:
             }
 
         try:
-            # Create concise onboarding prompt (minimize tokens)
+            # Keep prompt/context short to reduce token usage and latency.
+            recent_messages = conversation_history[-6:]
+            compact_history = "\n".join(
+                f"{msg.get('role', 'user')}: {msg.get('content', '')[:200]}"
+                for msg in recent_messages
+            )
             onboarding_prompt = PromptTemplate(
                 input_variables=["history", "input"],
-                template="""You are an AI learning assistant. Ask 3-4 concise questions to understand:
-1. Experience level (beginner/intermediate/advanced)
-2. Learning goal (new skill/portfolio/job/exploration)
-3. Domain interests (AI, web dev, data science, etc.)
-4. Time commitment (hours/week)
+                template="""You are an onboarding assistant. Keep responses under 80 words.
+Goal: collect exactly these fields across conversation:
+- experience_level (beginner/intermediate/advanced)
+- primary_goal
+- interests (list)
+- time_commitment (hours/week)
+- current_skills (list)
 
-Be brief and friendly.
+Rules:
+- Ask at most one focused follow-up question.
+- If enough information is already collected, confirm completion in a short sentence.
+- Do not repeat long context.
 
+Conversation:
 {history}
+user: {input}
+assistant:""",
+            )
+            self._log_prompt_observability(
+                "onboarding_chat",
+                onboarding_prompt.template,
+                {
+                    "history_turns": len(recent_messages),
+                    "user_message_chars": len(user_message or ""),
+                },
+            )
 
-User: {input}
-Assistant:"""
+            chain = LLMChain(llm=self.llm, prompt=onboarding_prompt)
+            chain_result = chain.invoke({"history": compact_history, "input": user_message})
+            response = chain_result.get("text", "").strip()
+
+            # Estimate completeness using parsed extraction from compact transcript.
+            transcript = f"{compact_history}\nuser: {user_message}\nassistant: {response}".strip()
+            extracted_info = response_parser.parse_onboarding_extraction(transcript)
+            has_core = bool(extracted_info.get("interests")) and extracted_info.get("time_commitment") not in (
+                None,
+                "",
+                "unknown",
             )
-            
-            # Create conversation chain with memory
-            memory = ConversationBufferMemory()
-            
-            # Add previous messages to memory
-            for msg in conversation_history:
-                if msg.get("role") == "user":
-                    memory.chat_memory.add_user_message(msg.get("content", ""))
-                elif msg.get("role") == "assistant":
-                    memory.chat_memory.add_ai_message(msg.get("content", ""))
-            
-            chain = LLMChain(
-                llm=self.llm,
-                memory=memory,
-                prompt=onboarding_prompt,
-            )
-            
-            # Generate response
-            response = chain.run(input=user_message)
-            
-            # Determine if onboarding is complete (after 3-4 exchanges)
-            is_complete = len(conversation_history) >= 6
-            
+            user_turns = sum(1 for msg in conversation_history if msg.get("role") == "user") + 1
+            is_complete = has_core and user_turns >= 3
+
             return {
                 "message": response,
                 "response": response,
                 "next_question": None if is_complete else response,
                 "is_complete": is_complete,
-                "extracted_info": {},
+                "extracted_info": extracted_info if is_complete else {},
             }
             
         except Exception as e:
@@ -220,14 +250,25 @@ For each project provide (keep concise):
 
 Format as numbered list."""
             )
+            self._log_prompt_observability(
+                "project_recommendations",
+                prompt.template,
+                {
+                    "context_projects": len(context_projects or []),
+                    "requested_count": count,
+                },
+            )
             
             chain = LLMChain(llm=self.llm, prompt=prompt)
             
-            response = chain.run(
-                rag_context=rag_context,
-                user_info=user_context,
-                count=count,
+            chain_result = chain.invoke(
+                {
+                    "rag_context": rag_context,
+                    "user_info": user_context,
+                    "count": count,
+                }
             )
+            response = chain_result.get("text", "")
             
             # TODO: Parse structured format
             return [{"raw_response": response}]
@@ -279,9 +320,15 @@ Provide:
 
 Be specific and practical."""
             )
+            self._log_prompt_observability(
+                "custom_project",
+                project_prompt.template,
+                {"idea_chars": len(prompt or "")},
+            )
             
             chain = LLMChain(llm=self.llm, prompt=project_prompt)
-            response = chain.run(idea=prompt, level=user_level)
+            chain_result = chain.invoke({"idea": prompt, "level": user_level})
+            response = chain_result.get("text", "")
             
             return {"raw_response": response}
             
@@ -329,12 +376,17 @@ Provide (be brief):
 
 Be encouraging."""
             )
+            self._log_prompt_observability(
+                "checkpoint_feedback",
+                feedback_prompt.template,
+                {"notes_chars": len(user_notes or "")},
+            )
             
             chain = LLMChain(llm=self.llm, prompt=feedback_prompt)
-            response = chain.run(
-                title=checkpoint.get("title", ""),
-                notes=user_notes,
+            chain_result = chain.invoke(
+                {"title": checkpoint.get("title", ""), "notes": user_notes}
             )
+            response = chain_result.get("text", "")
             
             return {
                 "approved": True,
@@ -409,9 +461,20 @@ Question: {query}
 
 Answer (be specific and cite context):"""
             )
+            self._log_prompt_observability(
+                "rag_answer",
+                rag_prompt.template,
+                {
+                    "context_chars": len(resolved_context or ""),
+                    "history_chars": len(history_text or ""),
+                },
+            )
             
             chain = LLMChain(llm=self.llm, prompt=rag_prompt)
-            response = chain.run(context=resolved_context, query=query, history=history_text)
+            chain_result = chain.invoke(
+                {"context": resolved_context, "query": query, "history": history_text}
+            )
+            response = chain_result.get("text", "")
             
             return response
             
@@ -474,15 +537,26 @@ CHECKPOINTS:
 
 Keep it concise and actionable."""
             )
+            self._log_prompt_observability(
+                "roadmap_generation",
+                roadmap_prompt.template,
+                {
+                    "skills_count": len(requirements.get("skills", [])),
+                    "resources_skills_count": len(available_resources or {}),
+                },
+            )
             
             chain = LLMChain(llm=self.llm, prompt=roadmap_prompt)
-            response = chain.run(
-                project_name=project.get("title", ""),
-                description=project.get("description", ""),
-                skills=", ".join(requirements.get("skills", [])),
-                level=user_profile.get("experience_level", "intermediate"),
-                time=requirements.get("estimated_time", "4 weeks")
+            chain_result = chain.invoke(
+                {
+                    "project_name": project.get("title", ""),
+                    "description": project.get("description", ""),
+                    "skills": ", ".join(requirements.get("skills", [])),
+                    "level": user_profile.get("experience_level", "intermediate"),
+                    "time": requirements.get("estimated_time", "4 weeks"),
+                }
             )
+            response = chain_result.get("text", "")
             
             # Parse response into structured format
             # TODO: Use structured output parsing
@@ -543,12 +617,17 @@ Suggest roadmap adjustments:
 
 Be brief (3-4 sentences)."""
             )
+            self._log_prompt_observability(
+                "roadmap_adjustment",
+                adjustment_prompt.template,
+                {"progress_payload_chars": len(str(progress) or "")},
+            )
             
             chain = LLMChain(llm=self.llm, prompt=adjustment_prompt)
-            response = chain.run(
-                progress_info=str(progress),
-                analysis=analysis
+            chain_result = chain.invoke(
+                {"progress_info": str(progress), "analysis": analysis}
             )
+            response = chain_result.get("text", "")
             
             return {
                 "adjustments": response,

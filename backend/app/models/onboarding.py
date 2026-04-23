@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import Any, Dict, List, Optional, Literal
 from datetime import datetime
 
 
@@ -18,12 +18,29 @@ class OnboardingResponse(BaseModel):
 
 class OnboardingData(BaseModel):
     """Complete onboarding data"""
-    experience_level: str
-    primary_goal: str
+    experience_level: Literal["beginner", "intermediate", "advanced"]
+    primary_goal: Literal["learn", "portfolio", "career", "exploration"]
     interests: List[str] = Field(default_factory=list)
     current_skills: List[str] = Field(default_factory=list)
     time_commitment: Optional[str] = None
     preferred_learning_style: Optional[str] = None
+
+    @field_validator("interests", "current_skills")
+    @classmethod
+    def _clean_string_list(cls, value: List[str]) -> List[str]:
+        cleaned = []
+        for item in value or []:
+            normalized = str(item).strip().lower()
+            if normalized and normalized not in cleaned:
+                cleaned.append(normalized)
+        return cleaned[:20]
+
+    @field_validator("time_commitment")
+    @classmethod
+    def _normalize_time_commitment(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return value
+        return " ".join(str(value).strip().split())
     
     class Config:
         from_attributes = True

@@ -36,11 +36,11 @@ const QuickAction = ({ children, onClick }) => (
   </button>
 );
 
-const ChatInterface = ({ onComplete }) => {
+const ChatInterface = ({ onComplete, onProgressChange }) => {
   const [messages, setMessages] = useState([
     {
       id: 1,
-      text: "Hi there! To curate your personalized learning journey, let's start with your goals. What is your primary goal for this month?",
+      text: "Hi there! Let's personalize your learning path. What is your main goal right now?",
       isBot: true,
     },
   ]);
@@ -114,6 +114,9 @@ const ChatInterface = ({ onComplete }) => {
       ]);
 
       await completeOnboardingIfPossible(response);
+      const totalMessages = nextMessages.length + 1;
+      const step = Math.min(4, Math.max(1, Math.floor(totalMessages / 2) + 1));
+      onProgressChange?.(step);
     } catch (sendError) {
       setError(sendError?.response?.data?.detail || 'Failed to send message. Please try again.');
     } finally {
@@ -126,6 +129,32 @@ const ChatInterface = ({ onComplete }) => {
   const handleQuickAction = (action) => {
     sendMessage(action);
   };
+
+  React.useEffect(() => {
+    onProgressChange?.(1);
+  }, [onProgressChange]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const hydrateInitialQuestion = async () => {
+      try {
+        const payload = await onboardingService.getInitialQuestions();
+        const question = payload?.questions?.[0]?.question;
+        if (!mounted || !question) return;
+        setMessages((prev) =>
+          prev.length === 1 && prev[0]?.isBot
+            ? [{ ...prev[0], text: question }]
+            : prev
+        );
+      } catch {
+        // Keep local fallback greeting if endpoint is unavailable.
+      }
+    };
+    hydrateInitialQuestion();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="flex flex-col h-full">

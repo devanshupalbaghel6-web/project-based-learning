@@ -14,11 +14,11 @@ const ProjectTabs = ({ activeTab = 'all', onTabChange, children }) => {
         <h2 className="font-heading font-semibold text-2xl">Projects</h2>
       </div>
 
-      <div className="flex gap-2 mb-6 border-b border-secondary-200">
+      <div className="flex gap-2 mb-6 border-b border-secondary-200 overflow-x-auto pb-1">
         {tabItems.map((tab) => (
           <button
             key={tab.key}
-            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2 font-medium border-b-2 whitespace-nowrap transition-colors ${
               activeTab === tab.key
                 ? 'text-primary-600 border-primary-600'
                 : 'text-secondary-600 border-transparent hover:text-secondary-900'

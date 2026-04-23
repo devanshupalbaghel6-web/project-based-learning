@@ -23,7 +23,11 @@ async def onboarding_chat(
     result = await orchestrator.process_onboarding_message(
         user_id=user_id,
         message=request.message,
-        context=request.context or {}
+        context=request.context or {},
+        conversation_history=[
+            {"role": msg.role, "content": msg.content}
+            for msg in request.conversation_history
+        ],
     )
     
     # Persist extracted onboarding profile for this authenticated user.
@@ -31,7 +35,9 @@ async def onboarding_chat(
         repos = get_repos()
         
         # Extract and save user profile
-        extracted_info = result.get("extracted_info", {})
+        extracted_info = response_parser.normalize_onboarding_extraction(
+            result.get("extracted_info", {})
+        )
         if extracted_info:
             await repos.users.save_onboarding_data(user_id, extracted_info)
     
@@ -55,30 +61,34 @@ async def complete_onboarding(
     repos = get_repos()
     
     # Save onboarding data to database
-    onboarding_dict = {
+    onboarding_dict = response_parser.normalize_onboarding_extraction({
         "experience_level": data.experience_level,
         "interests": data.interests,
         "current_skills": data.current_skills or [],
         "primary_goal": data.primary_goal,
         "time_commitment": data.time_commitment,
         "preferred_learning_style": data.preferred_learning_style
-    }
+    })
     
     await repos.users.save_onboarding_data(user_id, onboarding_dict)
     
     # Generate initial project recommendations
     user_profile = {
-        "experience_level": data.experience_level,
-        "interests": data.interests,
-        "skills": data.current_skills or [],
-        "primary_goal": data.primary_goal,
-        "time_commitment": data.time_commitment
+        "experience_level": onboarding_dict["experience_level"],
+        "interests": onboarding_dict["interests"],
+        "skills": onboarding_dict["current_skills"],
+        "primary_goal": onboarding_dict["primary_goal"],
+        "time_commitment": onboarding_dict["time_commitment"],
+        "user_id": user_id,
     }
     
-    projects = await orchestrator.generate_personalized_projects(
-        user_profile=user_profile,
-        count=5
-    )
+    existing_count = await repos.projects.count_by_user(user_id)
+    projects = []
+    if existing_count == 0:
+        projects = await orchestrator.generate_personalized_projects(
+            user_profile=user_profile,
+            count=5
+        )
     
     # Save generated projects to database
     for project_raw in projects:

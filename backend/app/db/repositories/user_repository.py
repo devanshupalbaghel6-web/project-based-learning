@@ -84,11 +84,16 @@ class UserRepository:
         data = {
             "user_id": user_id,
             **onboarding_data,
-            "completed_at": datetime.utcnow()
+            "completed_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
         }
         
-        # Save to onboarding collection
-        await self.db[COLLECTIONS["onboarding"]].insert_one(data)
+        # Keep one authoritative onboarding document per user.
+        await self.db[COLLECTIONS["onboarding"]].update_one(
+            {"user_id": user_id},
+            {"$set": data, "$setOnInsert": {"created_at": datetime.utcnow()}},
+            upsert=True,
+        )
         
         # Update user profile with extracted information
         profile_update = {

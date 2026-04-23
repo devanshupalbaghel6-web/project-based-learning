@@ -11,6 +11,16 @@ import json
 
 class ResponseParser:
     """Parser for LLM text responses"""
+
+    @staticmethod
+    def _clean_llm_text(value: str) -> str:
+        """Normalize common markdown/label artifacts from model output."""
+        cleaned = (value or "").strip()
+        cleaned = cleaned.replace("**", "")
+        cleaned = re.sub(r"^title\s*:\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^description\s*:\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
     
     @staticmethod
     def parse_projects_list(llm_response: str) -> List[Dict]:
@@ -35,20 +45,24 @@ class ResponseParser:
             
             # Extract title (first line)
             lines = content.strip().split('\n')
-            project['title'] = lines[0].strip()
+            project['title'] = ResponseParser._clean_llm_text(lines[0])
             
             # Extract other fields
             for line in lines[1:]:
                 if ':' in line:
                     key, value = line.split(':', 1)
                     key = key.strip().lower().replace(' ', '_')
-                    value = value.strip()
+                    value = ResponseParser._clean_llm_text(value)
                     
                     if key == 'description':
                         project['description'] = value
                     elif key in ['tech_stack', 'technologies', 'stack']:
                         # Parse comma-separated list
-                        project['tech_stack'] = [t.strip() for t in value.split(',')]
+                        project['tech_stack'] = [
+                            ResponseParser._clean_llm_text(t)
+                            for t in re.split(r"[,\-|/]", value)
+                            if ResponseParser._clean_llm_text(t)
+                        ]
                     elif key in ['duration', 'estimated_time', 'time']:
                         project['estimated_duration'] = value
                     elif key == 'difficulty':
@@ -232,7 +246,7 @@ class ResponseParser:
         json_data = ResponseParser.extract_json_from_response(llm_response)
         if json_data:
             extracted.update(json_data)
-            return extracted
+            return ResponseParser.normalize_onboarding_extraction(extracted)
         
         # Fallback to text parsing
         lines = llm_response.lower().split('\n')
@@ -270,7 +284,53 @@ class ResponseParser:
                     elif 'day' in line:
                         extracted['time_commitment'] = f"{hours} hours/day"
         
-        return extracted
+        return ResponseParser.normalize_onboarding_extraction(extracted)
+
+    @staticmethod
+    def normalize_onboarding_extraction(raw: Dict) -> Dict:
+        """Enforce onboarding extraction contract and normalize values."""
+        normalized = {
+            "experience_level": "beginner",
+            "interests": [],
+            "primary_goal": "learn",
+            "time_commitment": "unknown",
+            "current_skills": [],
+            "preferred_learning_style": "hands_on",
+        }
+
+        experience = str(raw.get("experience_level", "beginner")).lower().strip()
+        if experience in {"beginner", "intermediate", "advanced"}:
+            normalized["experience_level"] = experience
+
+        goal = str(raw.get("primary_goal", "learn")).lower().strip()
+        goal_map = {
+            "learning": "learn",
+            "learn": "learn",
+            "portfolio": "portfolio",
+            "career": "career",
+            "job": "career",
+            "exploration": "exploration",
+            "explore": "exploration",
+        }
+        normalized["primary_goal"] = goal_map.get(goal, "learn")
+
+        for key in ("interests", "current_skills"):
+            values = raw.get(key, [])
+            if isinstance(values, str):
+                values = re.split(r"[,/|]", values)
+            cleaned = []
+            for item in values or []:
+                token = ResponseParser._clean_llm_text(str(item)).lower()
+                if token and token not in cleaned:
+                    cleaned.append(token)
+            normalized[key] = cleaned[:20]
+
+        time_commitment = ResponseParser._clean_llm_text(str(raw.get("time_commitment", "unknown")))
+        normalized["time_commitment"] = time_commitment.lower() if time_commitment else "unknown"
+
+        style = ResponseParser._clean_llm_text(str(raw.get("preferred_learning_style", "hands_on"))).lower()
+        normalized["preferred_learning_style"] = style or "hands_on"
+        return normalized
 
 
 # Singleton instance

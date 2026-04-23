@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     
     # Groq API (Lightweight Llama models) - Secondary LLM for simple tasks
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama3-8b-8192"  # Fast, efficient for simple tasks
+    GROQ_MODEL: str = "llama-3.1-8b-instant"  # Fast, efficient for simple tasks
     GROQ_TEMPERATURE: float = 0.5
     GROQ_MAX_TOKENS: int = 1024
     

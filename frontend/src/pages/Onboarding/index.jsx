@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChatInterface, OnboardingProgress } from './components';
 import { ArrowRight } from 'lucide-react';
@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 const OnboardingPage = () => {
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
+  const [currentStep, setCurrentStep] = useState(1);
 
   const handleOnboardingComplete = async () => {
     await refreshUser();
@@ -37,10 +38,10 @@ const OnboardingPage = () => {
 
       {/* Main Content */}
       <div className="container-custom py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           {/* Left Side - Progress */}
           <div className="lg:col-span-1">
-            <OnboardingProgress />
+            <OnboardingProgress currentStep={currentStep} />
           </div>
 
           {/* Right Side - Chat */}
@@ -58,7 +59,10 @@ const OnboardingPage = () => {
 
               {/* Chat Content */}
               <div className="bg-secondary-50 h-[600px] lg:h-[700px]">
-                <ChatInterface onComplete={handleOnboardingComplete} />
+                <ChatInterface
+                  onComplete={handleOnboardingComplete}
+                  onProgressChange={setCurrentStep}
+                />
               </div>
             </div>
           </div>

@@ -11,6 +11,9 @@ import OnboardingPage from '@pages/Onboarding';
 import DashboardPage from '@pages/Dashboard';
 import ProjectsPage from '@pages/Projects';
 import ResourcesPage from '@pages/Resources';
+import RoadmapsPage from '@pages/Roadmaps';
+import ChatbotPage from '@pages/Chatbot';
+import SettingsPage from '@pages/Settings';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -78,7 +81,18 @@ function App() {
           element={
             <ProtectedRoute>
               <div className="flex min-h-screen bg-secondary-50">
-                <Sidebar isOpen={sidebarOpen} currentUser={user} onLogout={logout} />
+                <Sidebar
+                  isOpen={sidebarOpen}
+                  currentUser={user}
+                  onLogout={logout}
+                  onNavigate={() => setSidebarOpen(false)}
+                />
+                {sidebarOpen && (
+                  <div
+                    className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+                    onClick={() => setSidebarOpen(false)}
+                  />
+                )}
 
                 <div className="flex-1 lg:ml-64">
                   <Header
@@ -96,9 +110,9 @@ function App() {
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/projects" element={<ProjectsPage />} />
                       <Route path="/resources" element={<ResourcesPage />} />
-                      <Route path="/roadmaps" element={<div>Roadmaps Page (Coming Soon)</div>} />
-                      <Route path="/chatbot" element={<div>AI Chatbot Page (Coming Soon)</div>} />
-                      <Route path="/settings" element={<div>Settings Page (Coming Soon)</div>} />
+                      <Route path="/roadmaps" element={<RoadmapsPage />} />
+                      <Route path="/chatbot" element={<ChatbotPage />} />
+                      <Route path="/settings" element={<SettingsPage />} />
                       <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                   </main>

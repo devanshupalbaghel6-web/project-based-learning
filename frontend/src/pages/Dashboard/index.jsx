@@ -9,6 +9,8 @@ import progressService from '@services/progress';
 import { useAuth } from '@/context/AuthContext';
 
 const DashboardPage = () => {
+  const cleanText = (value = '') =>
+    String(value).replace(/\*\*/g, '').replace(/^title:\s*/i, '').trim();
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [activities, setActivities] = useState([]);
@@ -113,7 +115,7 @@ const DashboardPage = () => {
             <div className="bg-gradient-to-br from-primary-50 to-primary-100 rounded-xl p-6 border border-primary-200">
               {currentProject ? (
                 <>
-                  <h3 className="font-heading font-bold text-xl mb-2">{currentProject.title}</h3>
+                  <h3 className="font-heading font-bold text-xl mb-2">{cleanText(currentProject.title)}</h3>
                   <p className="text-secondary-700 mb-4">{currentProject.description}</p>
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-sm font-medium">Overall Progress</span>

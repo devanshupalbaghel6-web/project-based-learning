@@ -74,7 +74,8 @@ class LearningOrchestrator:
         self,
         user_id: str,
         message: str,
-        context: Dict
+        context: Dict,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Process onboarding conversation message.
@@ -89,6 +90,16 @@ class LearningOrchestrator:
             }
         """
         memory = self.get_user_memory(user_id)
+        conversation_history = conversation_history or []
+
+        if conversation_history and not memory.chat_memory.messages:
+            for msg in conversation_history[-8:]:
+                role = msg.get("role")
+                content = msg.get("content", "")
+                if role == "user":
+                    memory.chat_memory.add_user_message(content)
+                elif role == "assistant":
+                    memory.chat_memory.add_ai_message(content)
 
         chat_history = self._serialize_memory_messages(memory.chat_memory.messages)
         

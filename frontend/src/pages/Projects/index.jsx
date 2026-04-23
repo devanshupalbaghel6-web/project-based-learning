@@ -6,6 +6,8 @@ import { Plus, Filter } from 'lucide-react';
 import projectsService from '@services/projects';
 
 const ProjectsPage = () => {
+  const cleanText = (value = '') =>
+    String(value).replace(/\*\*/g, '').replace(/^title:\s*/i, '').trim();
   const [projects, setProjects] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -129,7 +131,7 @@ const ProjectsPage = () => {
         {currentProject ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <h3 className="font-heading font-bold text-2xl mb-2">{currentProject.title}</h3>
+              <h3 className="font-heading font-bold text-2xl mb-2">{cleanText(currentProject.title)}</h3>
               <p className="text-secondary-600 mb-4">{currentProject.description}</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div>

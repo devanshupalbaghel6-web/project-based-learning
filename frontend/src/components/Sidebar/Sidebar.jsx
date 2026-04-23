@@ -26,7 +26,7 @@ const navigationItems = [
  * @param {object} props.currentUser - Authenticated user
  * @param {function} props.onLogout - Logout handler
  */
-const Sidebar = ({ isOpen = true, currentUser, onLogout }) => {
+const Sidebar = ({ isOpen = true, currentUser, onLogout, onNavigate }) => {
   const location = useLocation();
   const name = currentUser?.name || currentUser?.full_name || 'User';
   const email = currentUser?.email || 'user@example.com';
@@ -65,6 +65,7 @@ const Sidebar = ({ isOpen = true, currentUser, onLogout }) => {
             <Link
               key={item.name}
               to={item.path}
+              onClick={() => onNavigate?.()}
               className={clsx(
                 'sidebar-item',
                 isActive && 'sidebar-item-active'

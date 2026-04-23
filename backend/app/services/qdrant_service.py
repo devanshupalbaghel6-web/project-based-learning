@@ -16,6 +16,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    PayloadSchemaType,
 )
 from app.core.config import settings
 from app.utils.embeddings import embedding_service, get_embedding
@@ -122,6 +123,20 @@ class QdrantService:
                 print(f"✅ Collection '{self.collection_name}' created")
             else:
                 print(f"Collection '{self.collection_name}' already exists")
+
+            # Ensure payload indexes used by filters exist to avoid
+            # `Index required but not found` errors in cloud mode.
+            index_fields = ["type", "user_id", "skill", "source", "resource_type"]
+            for field_name in index_fields:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name=field_name,
+                        field_schema=PayloadSchemaType.KEYWORD,
+                    )
+                except Exception:
+                    # Index may already exist depending on backend.
+                    pass
                 
         except Exception as e:
             print(f"Error ensuring collection: {e}")

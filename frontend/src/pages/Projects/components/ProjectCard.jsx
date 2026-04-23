@@ -6,6 +6,8 @@ import ProgressBar from '@components/ProgressBar';
 import { Clock, Code } from 'lucide-react';
 
 const ProjectCard = ({ project, onAction }) => {
+  const cleanText = (value = '') =>
+    String(value).replace(/\*\*/g, '').replace(/^title:\s*/i, '').trim();
   const difficulty = String(project.difficulty || 'intermediate');
   const difficultyLabel = `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1)}`;
   const duration = project.estimated_duration || (project.duration_weeks ? `${project.duration_weeks} weeks` : 'Flexible');
@@ -20,7 +22,7 @@ const ProjectCard = ({ project, onAction }) => {
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <h3 className="font-heading font-semibold text-xl mb-2">
-            {project.title}
+            {cleanText(project.title)}
           </h3>
           <p className="text-secondary-600 text-sm mb-3">
             {project.description}

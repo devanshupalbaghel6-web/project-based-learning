@@ -17,6 +17,7 @@ Optimizations for free tier:
 
 from typing import Any, Dict, List, Optional
 import logging
+import time
 from app.core.config import settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import LLMChain
@@ -24,6 +25,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 import google.generativeai as genai
 from app.services.qdrant_service import qdrant_service
+from app.services.groq_service import groq_service
 from app.utils.response_parser import response_parser
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,7 @@ class LLMService:
     def __init__(self):
         self.google_api_key = settings.GOOGLE_API_KEY
         self.llm = None
+        self._gemini_blocked_until = 0.0
         
         # Configure Gemini
         if self.google_api_key:
@@ -47,6 +50,7 @@ class LLMService:
                 temperature=settings.GEMINI_TEMPERATURE,
                 max_output_tokens=settings.GEMINI_MAX_TOKENS,
                 convert_system_message_to_human=True,
+                max_retries=0,
             )
             
             print(f"✅ LLM initialized: {settings.GEMINI_MODEL}")
@@ -67,6 +71,45 @@ class LLMService:
         if extra:
             payload.update(extra)
         logger.info("llm_prompt_metrics %s", payload)
+
+    @staticmethod
+    def _is_quota_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return "quota" in text or "resourceexhausted" in text or "429" in text
+
+    def _block_gemini_temporarily(self, seconds: int = 1800) -> None:
+        self._gemini_blocked_until = time.time() + seconds
+
+    def _can_use_gemini(self) -> bool:
+        return bool(self.llm) and time.time() >= self._gemini_blocked_until
+
+    def _fallback_projects(self, user_preferences: Dict, count: int = 5) -> List[Dict]:
+        interests = user_preferences.get("interests", []) or ["software development"]
+        level = user_preferences.get("experience_level", "beginner")
+        goal = user_preferences.get("primary_goal", "learn")
+        skills = user_preferences.get("skills", []) or user_preferences.get("current_skills", [])
+        results: List[Dict] = []
+        for idx in range(count):
+            interest = interests[idx % len(interests)]
+            results.append(
+                {
+                    "title": f"{interest.title()} Portfolio Sprint {idx + 1}",
+                    "description": (
+                        f"Build a practical {interest} project tailored for a {level} learner "
+                        f"focused on {goal} outcomes."
+                    ),
+                    "difficulty": level,
+                    "domain": interest,
+                    "estimated_duration": "3-5 weeks",
+                    "tech_stack": skills[:3] or ["Python", "FastAPI", "React"],
+                    "skills_to_learn": [interest],
+                    "source": "profile_fallback",
+                }
+            )
+        return results
+
+    def _groq_text(self, prompt: str, max_tokens: int = 512) -> Optional[str]:
+        return groq_service.generate_text(prompt=prompt, max_tokens=max_tokens)
     
     async def generate_onboarding_response(
         self,
@@ -87,9 +130,23 @@ class LLMService:
         conversation_history = conversation_history or []
         context = context or {}
 
-        if not self.llm:
+        if not settings.GEMINI_ENABLE_ONBOARDING_CHAT or not self._can_use_gemini():
             is_complete = len(conversation_history) >= 6
-            fallback = "Thanks, that helps. What is your current experience level and weekly time commitment?"
+            compact_history = "\n".join(
+                f"{msg.get('role', 'user')}: {msg.get('content', '')[:160]}"
+                for msg in conversation_history[-6:]
+            )
+            groq_prompt = (
+                "You are an onboarding assistant.\n"
+                "Collect these fields over chat: experience_level, primary_goal, interests, "
+                "time_commitment, current_skills.\n"
+                "Keep response under 60 words and ask one clear follow-up.\n"
+                f"History:\n{compact_history}\n"
+                f"User: {user_message}\nAssistant:"
+            )
+            fallback = self._groq_text(groq_prompt, max_tokens=180) or (
+                "Thanks, that helps. What is your current experience level and weekly time commitment?"
+            )
             return {
                 "message": fallback,
                 "response": fallback,
@@ -158,6 +215,23 @@ assistant:""",
             }
             
         except Exception as e:
+            if self._is_quota_error(e):
+                self._block_gemini_temporarily()
+                fallback = self._groq_text(
+                    (
+                        "Act as onboarding assistant. Ask one concise follow-up question to collect: "
+                        "experience_level, primary_goal, interests, time_commitment, current_skills.\n"
+                        f"User message: {user_message}\nAssistant:"
+                    ),
+                    max_tokens=160,
+                ) or "Tell me about your learning goals!"
+                return {
+                    "message": fallback,
+                    "response": fallback,
+                    "next_question": fallback,
+                    "is_complete": False,
+                    "extracted_info": {},
+                }
             print(f"Error in generate_onboarding_response: {e}")
             return {
                 "message": "Tell me about your learning goals!",
@@ -186,20 +260,28 @@ assistant:""",
         interests = user_preferences.get("interests", [])
         goal = user_preferences.get("primary_goal", "learning")
 
-        if not self.llm:
+        if not settings.GEMINI_ENABLE_PROJECT_GENERATION:
+            groq_prompt = (
+                f"Generate {count} practical project ideas for this learner profile.\n"
+                f"{user_preferences}\n"
+                "Return numbered list with Title, Description, Tech Stack, Duration, Difficulty."
+            )
+            groq_projects = self._groq_text(groq_prompt, max_tokens=900)
+            if groq_projects:
+                return [{"raw_response": groq_projects, "source": "groq_fallback"}]
+            return self._fallback_projects(user_preferences=user_preferences, count=count)
+
+        if not self._can_use_gemini():
+            groq_prompt = (
+                f"Generate {count} practical project ideas for this learner profile.\n"
+                f"{user_preferences}\n"
+                "Return numbered list with Title, Description, Tech Stack, Duration, Difficulty."
+            )
+            groq_projects = self._groq_text(groq_prompt, max_tokens=900)
+            if groq_projects:
+                return [{"raw_response": groq_projects, "source": "groq_fallback"}]
             # Deterministic fallback when LLM is unavailable.
-            return [
-                {
-                    "title": f"{interest.title()} Starter Project {idx + 1}",
-                    "description": f"Build a practical {interest} project aligned to your goal: {goal}.",
-                    "difficulty": user_preferences.get("experience_level", "intermediate"),
-                    "domain": interest,
-                    "estimated_duration": "3-4 weeks",
-                    "tech_stack": user_preferences.get("skills", [])[:3] or ["Python"],
-                    "skills_to_learn": [interest],
-                }
-                for idx, interest in enumerate((interests or ["software development"])[:count])
-            ]
+            return self._fallback_projects(user_preferences=user_preferences, count=count)
 
         try:
             # Build context from user preferences
@@ -274,8 +356,20 @@ Format as numbered list."""
             return [{"raw_response": response}]
             
         except Exception as e:
+            if self._is_quota_error(e):
+                self._block_gemini_temporarily()
+                groq_projects = self._groq_text(
+                    (
+                        f"Generate {count} practical personalized project ideas.\n"
+                        f"Profile: {user_preferences}\n"
+                        "Format as numbered list with title and short description."
+                    ),
+                    max_tokens=900,
+                )
+                if groq_projects:
+                    return [{"raw_response": groq_projects, "source": "groq_fallback"}]
             print(f"Error in generate_project_recommendations: {e}")
-            return []
+            return self._fallback_projects(user_preferences=user_preferences, count=count)
     
     async def generate_custom_project(
         self,
@@ -292,7 +386,17 @@ Format as numbered list."""
         Returns:
             Complete project structure
         """
-        if not self.llm:
+        if not settings.GEMINI_ENABLE_PROJECT_GENERATION or not self._can_use_gemini():
+            groq_response = self._groq_text(
+                (
+                    f"Create one project plan for idea: {prompt}\n"
+                    f"Learner level: {user_level}\n"
+                    "Include title, description, tech stack, roadmap steps, and checkpoints."
+                ),
+                max_tokens=700,
+            )
+            if groq_response:
+                return {"raw_response": groq_response}
             return {
                 "raw_response": (
                     f"1. {prompt.title()}\n"
@@ -333,8 +437,28 @@ Be specific and practical."""
             return {"raw_response": response}
             
         except Exception as e:
+            if self._is_quota_error(e):
+                self._block_gemini_temporarily()
+                groq_response = self._groq_text(
+                    (
+                        f"Create one project plan for idea: {prompt}\n"
+                        f"Learner level: {user_level}\n"
+                        "Include title, description, tech stack, roadmap, checkpoints."
+                    ),
+                    max_tokens=700,
+                )
+                if groq_response:
+                    return {"raw_response": groq_response}
             print(f"Error in generate_custom_project: {e}")
-            return {}
+            return {
+                "raw_response": (
+                    f"1. {prompt.title()}\n"
+                    f"Description: Build a practical project for {user_level} learners\n"
+                    "Tech Stack: Python, FastAPI, React\n"
+                    "Duration: 4 weeks\n"
+                    f"Difficulty: {user_level}"
+                )
+            }
     
     async def analyze_checkpoint_submission(
         self,

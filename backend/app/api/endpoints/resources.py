@@ -85,11 +85,12 @@ async def get_recommended_resources(
     """
     repos = get_repos()
     
-    # Get user's active projects
+    # Prefer active projects; fall back to most recent user projects.
     active_projects = await repos.projects.get_active_projects(user_id)
-    
     if not active_projects:
-        raise HTTPException(status_code=404, detail="No active projects found")
+        active_projects = await repos.projects.find_by_user(user_id=user_id, skip=0, limit=5)
+    if not active_projects:
+        return {"total": 0, "resources": [], "reason": "No projects yet. Start a project to get recommendations."}
     
     # Get user profile
     user = await repos.users.find_by_id(user_id)

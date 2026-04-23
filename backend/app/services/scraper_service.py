@@ -17,8 +17,11 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote, urljoin
 import json
 from datetime import datetime
+import logging
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class ScraperService:
@@ -320,7 +323,24 @@ class ScraperService:
             response = await self.client.get(url, params=params)
             
             if response.status_code != 200:
-                print(f"Google API error: {response.status_code}")
+                reason = ""
+                message = ""
+                try:
+                    error_payload = response.json().get("error", {})
+                    message = str(error_payload.get("message", ""))[:300]
+                    errors = error_payload.get("errors", [])
+                    if errors and isinstance(errors, list):
+                        first_error = errors[0]
+                        reason = str(first_error.get("reason", ""))[:120]
+                except Exception:
+                    message = response.text[:300]
+                logger.warning(
+                    "Google CSE rejected request status=%s reason=%s message=%s query_len=%s",
+                    response.status_code,
+                    reason or "unknown",
+                    message or "no message",
+                    len(query or ""),
+                )
                 return []
             
             data = response.json()

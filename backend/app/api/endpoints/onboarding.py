@@ -98,11 +98,11 @@ async def complete_onboarding(
             
             for proj_data in parsed_projects:
                 proj_data["user_id"] = user_id
-                proj_data["source"] = "ai_generated"
+                proj_data["source"] = proj_data.get("source") or "ai_generated"
                 await repos.projects.create(proj_data)
         elif isinstance(project_raw, dict):
             project_raw["user_id"] = user_id
-            project_raw["source"] = "ai_generated"
+            project_raw["source"] = project_raw.get("source") or "ai_generated"
             await repos.projects.create(project_raw)
     
     return data

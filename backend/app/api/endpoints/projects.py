@@ -56,6 +56,15 @@ async def get_recommended_projects(
     combining LLM generation and web scraping.
     """
     repos = get_repos()
+
+    # Reuse existing pending AI/profile recommendations first to avoid duplicates.
+    existing_projects = await repos.projects.find_by_user(user_id=user_id, status="not_started", skip=0, limit=20)
+    existing_recommended = [
+        proj for proj in existing_projects
+        if proj.get("source") in {"ai_generated", "profile_fallback"}
+    ]
+    if existing_recommended:
+        return [Project(**proj) for proj in existing_recommended[:10]]
     
     # Fetch user profile from database
     user = await repos.users.find_by_id(user_id)
@@ -84,7 +93,7 @@ async def get_recommended_projects(
             
             for proj_data in parsed_projects:
                 proj_data["user_id"] = user_id
-                proj_data["source"] = "ai_generated"
+                proj_data["source"] = proj_data.get("source") or "ai_generated"
                 proj_data["status"] = "not_started"
                 proj_data["created_at"] = datetime.utcnow()
                 proj_data["updated_at"] = datetime.utcnow()
@@ -94,7 +103,7 @@ async def get_recommended_projects(
                 recommended_projects.append(Project(**saved_project))
         elif isinstance(project_raw, dict):
             project_raw["user_id"] = user_id
-            project_raw["source"] = "ai_generated"
+            project_raw["source"] = project_raw.get("source") or "ai_generated"
             project_raw["status"] = "not_started"
             project_raw["created_at"] = datetime.utcnow()
             project_raw["updated_at"] = datetime.utcnow()

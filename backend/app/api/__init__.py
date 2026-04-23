@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import onboarding, projects, resources, users, progress, auth
+from app.api.endpoints import onboarding, projects, resources, users, progress, auth, system
 
 router = APIRouter()
 
@@ -39,4 +39,10 @@ router.include_router(
     progress.router,
     prefix="/progress",
     tags=["progress", "roadmap"]
+)
+
+router.include_router(
+    system.router,
+    prefix="/system",
+    tags=["system", "health"]
 )

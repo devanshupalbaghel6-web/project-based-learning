@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.0-flash-exp"  # Free tier model
     GEMINI_TEMPERATURE: float = 0.7
     GEMINI_MAX_TOKENS: int = 2048
+    GEMINI_ENABLE_ONBOARDING_CHAT: bool = False
+    GEMINI_ENABLE_PROJECT_GENERATION: bool = False
     
     # Groq API (Lightweight Llama models) - Secondary LLM for simple tasks
     GROQ_API_KEY: str = ""

@@ -55,6 +55,23 @@ class GroqService:
             if "decommissioned" in str(e).lower() or "not supported" in str(e).lower():
                 self.llm = None
             return None
+
+    def generate_text(self, prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
+        """Generate free-form text with Groq as a fallback LLM."""
+        if not self.client:
+            return None
+        try:
+            completion = self.client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=settings.GROQ_TEMPERATURE,
+                max_tokens=max_tokens or settings.GROQ_MAX_TOKENS,
+            )
+            message = completion.choices[0].message.content if completion.choices else ""
+            return (message or "").strip() or None
+        except Exception as e:
+            print(f"Error generating text with Groq: {e}")
+            return None
     
     def classify_resource_type(self, url: str, title: str = "") -> str:
         """

@@ -1,7 +1,7 @@
 # AI-Powered Project-Based Learning Platform
 
 A comprehensive learning platform that provides personalized project recommendations and curated resources based on user's experience, goals, and interests.
-
+# Team - Devanshu pal baghel , Devansh sharma, Dev sharma
 ## 🚀 Features
 
 ### 1. AI-Powered Onboarding

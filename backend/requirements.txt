@@ -26,9 +26,7 @@ langchain-google-genai==0.0.6
 langchain-groq==0.0.1
 langchain-community==0.0.16
 
-# Local Embeddings (optimized, lightweight model)
-sentence-transformers==2.3.1
-torch>=2.2.0
+# Local Embeddings (lightweight, no PyTorch/CUDA dependency)
 
 # Vector DB - Qdrant (more efficient than ChromaDB)
 qdrant-client==1.7.0

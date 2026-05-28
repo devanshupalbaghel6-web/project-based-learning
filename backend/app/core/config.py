@@ -38,10 +38,8 @@ class Settings(BaseSettings):
     GROQ_TEMPERATURE: float = 0.5
     GROQ_MAX_TOKENS: int = 1024
     
-    # Embeddings (Local - sentence-transformers)
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"  # 80MB, fast, good quality
-    EMBEDDING_DEVICE: str = "cpu"  # or "cuda" if GPU available
-    EMBEDDING_BATCH_SIZE: int = 32
+    # Embeddings (Local - lightweight hashing vectorizer)
+    EMBEDDING_DIMENSION: int = 384
     
     # Vector Database - Qdrant
     QDRANT_URL: str = ""  # Cloud URL from env (e.g., https://xxx.cloud.qdrant.io:6333)

@@ -31,7 +31,11 @@ class MongoDB:
             
         except Exception as e:
             logger.error(f"❌ MongoDB connection failed: {e}")
-            raise
+            # Do not raise here to allow the application to start in
+            # development environments where MongoDB may be unreachable.
+            self.client = None
+            self.db = None
+            return
     
     async def close(self):
         """Close MongoDB connection"""

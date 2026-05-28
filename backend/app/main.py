@@ -30,9 +30,12 @@ async def startup_event():
     try:
         # Connect to MongoDB
         await mongodb.connect()
-        
-        # Initialize repositories
-        init_repositories(mongodb.db)
+
+        # Initialize repositories only if DB connection was successful
+        if mongodb.db is not None:
+            init_repositories(mongodb.db)
+        else:
+            logger.warning("MongoDB not available; skipping repository initialization")
         
         logger.info("✅ Application startup complete")
     except Exception as e:
